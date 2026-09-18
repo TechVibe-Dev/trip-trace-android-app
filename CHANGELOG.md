@@ -7,7 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- Configured Dependabot (gradle + github-actions), weekly. ([#28](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/28))
+- Configured Dependabot (gradle + github-actions), monthly. ([#28](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/28), [#47](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/47))
 - Wired real GPS location into Create trip (runtime permission + `FusedLocationProviderClient`). ([#25](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/25))
 - Connected Create trip and Trips screens to the real API (create, list planned, start). ([#24](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/24))
 - Backport workflow now pushes a dedicated branch instead of using `main` directly as the PR head, so deleting the branch after merge can't delete `main`. ([#22](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/22))
