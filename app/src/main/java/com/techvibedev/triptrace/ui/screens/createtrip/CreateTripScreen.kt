@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.techvibedev.triptrace.data.model.TripCreateRequest
 import com.techvibedev.triptrace.data.repository.TripRepository
+import com.techvibedev.triptrace.location.GeocodingProvider
 import com.techvibedev.triptrace.location.LocationProvider
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -54,10 +55,10 @@ import java.time.ZoneId
 import java.time.format.DateTimeParseException
 import kotlinx.coroutines.launch
 
-// Destination (and origin, when the user opts out of current location) still
-// use placeholder coordinates — geocoding a typed address isn't wired up
-// yet, see issue android#23. Origin now uses real GPS when "Ubicacion
-// actual" is selected (this PR).
+// Origin still falls back to a placeholder when the user opts out of
+// "Ubicacion actual" — there's no text field for typing a custom origin
+// address yet, only the current-location toggle. Destination is now
+// geocoded from whatever text the user types (see GeocodingProvider).
 private const val PLACEHOLDER_LAT = -34.9011
 private const val PLACEHOLDER_LNG = -56.1645
 
@@ -69,6 +70,7 @@ fun CreateTripScreen(
 ) {
     val context = LocalContext.current
     val locationProvider = remember { LocationProvider(context.applicationContext) }
+    val geocodingProvider = remember { GeocodingProvider(context.applicationContext) }
 
     var useCurrentLocation by remember { mutableStateOf(true) }
     var currentLat by remember { mutableStateOf<Double?>(null) }
@@ -145,6 +147,14 @@ fun CreateTripScreen(
         errorMessage = null
         isSaving = true
         scope.launch {
+            val geocodeResult = geocodingProvider.geocode(destination)
+            val destinationCoords = geocodeResult.getOrNull()
+            if (destinationCoords == null) {
+                isSaving = false
+                errorMessage = "No se encontro esa direccion, proba con otro texto"
+                return@launch
+            }
+
             val originLat = if (useCurrentLocation) currentLat!! else PLACEHOLDER_LAT
             val originLng = if (useCurrentLocation) currentLng!! else PLACEHOLDER_LNG
             val request = TripCreateRequest(
@@ -152,8 +162,8 @@ fun CreateTripScreen(
                 originLat = originLat,
                 originLng = originLng,
                 destinationName = destination,
-                destinationLat = PLACEHOLDER_LAT,
-                destinationLng = PLACEHOLDER_LNG,
+                destinationLat = destinationCoords.first,
+                destinationLng = destinationCoords.second,
                 plannedDepartureAt = timeTextToIso(departureTime),
                 desiredArrivalAt = timeTextToIso(desiredArrivalTime),
             )
