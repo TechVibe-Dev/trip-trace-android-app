@@ -7,6 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Active trip screen now shows real current speed (live, via a Room `Flow`) and real departure time — replaces two of the mock stat cards. ETA and stop progress still mock, pending `api#7`. ([#51](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/51))
 - Fixed History showing timestamps in UTC labeled as local time (could even show the wrong day for a trip that ended late at night). Same bug fixed in the still-open PR #50 (Viajes) and #51 (Viaje en tiempo real). ([#53](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/53))
 - Create trip now calls `POST /trips/{id}/calculate-route` after saving (best-effort — a failure there doesn't block saving the trip). Wired the "Usar hora actual" button on stale planned trips (previously a no-op) to `PATCH planned_departure_at`. ([#50](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/50))
 - Fixed CI: `android-actions/setup-android@v4` defaults to installing the deprecated `tools` SDK package, which Google stopped serving mid-September — broke every build. We don't need it (Gradle resolves its own SDK components), so `packages: ''` skips installing it.
