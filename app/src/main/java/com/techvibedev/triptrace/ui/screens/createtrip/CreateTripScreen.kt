@@ -160,6 +160,12 @@ fun CreateTripScreen(
             val result = tripRepository.createTrip(request)
             result.fold(
                 onSuccess = { trip ->
+                    // Best-effort: an ETA/route is a nice-to-have, not a
+                    // reason to block saving the trip if Google Routes has
+                    // a hiccup (rate limit, no connectivity, etc). Result
+                    // intentionally ignored here.
+                    tripRepository.calculateRoute(trip.id)
+
                     if (startNow) {
                         val startResult = tripRepository.startTrip(trip.id)
                         isSaving = false
