@@ -7,6 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Fixed stops being silently discarded on save — Create trip now geocodes each one and creates it via `POST /trips/{id}/stops` (`type: PLANNED`). Validates the destination and all stops up front; if any address can't be resolved, nothing is created. ([#60](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/60))
 - Create trip now geocodes the typed destination (Android's built-in `Geocoder`, no API key) instead of always using placeholder coordinates. Shows an error and doesn't save if the address can't be resolved. ([#56](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/56))
 - Sync: recorded GPS points now upload to the API (`POST /trips/{id}/gps-points`) when a trip finishes, before calling `/finalize` — `distance_km`/`max_speed`/`min_speed`/`avg_speed` are computed from real data instead of always coming back null. Best-effort: a failed upload leaves points unsynced in Room for a later retry, without blocking the trip from being marked `COMPLETED`. ([#55](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/55))
 - Active trip screen now shows real current speed (live, via a Room `Flow`) and real departure time — replaces two of the mock stat cards. ETA and stop progress still mock, pending `api#7`. ([#51](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/51))
