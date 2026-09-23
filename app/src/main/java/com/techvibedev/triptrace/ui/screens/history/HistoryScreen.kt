@@ -20,10 +20,12 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,86 +33,82 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-
-data class PastTrip(
-    val id: String,
-    val originLabel: String,
-    val destinationLabel: String,
-    val dateLabel: String,
-    val durationLabel: String,
-    val distanceLabel: String,
-    val maxSpeedLabel: String,
-    val avgSpeedLabel: String,
-    val statusLabel: String,
-    val wasOnTime: Boolean,
-)
-
-// Mock data for now — will be replaced once trip history comes from the API
-// (api#8). UI only, matches the approved mockup.
-private val mockPastTrips = listOf(
-    PastTrip(
-        id = "1",
-        originLabel = "Casa",
-        destinationLabel = "Oficina",
-        dateLabel = "Hoy",
-        durationLabel = "49 min",
-        distanceLabel = "31 km",
-        maxSpeedLabel = "78 km/h",
-        avgSpeedLabel = "41 km/h",
-        statusLabel = "+15 min",
-        wasOnTime = false,
-    ),
-    PastTrip(
-        id = "2",
-        originLabel = "Oficina",
-        destinationLabel = "Casa",
-        dateLabel = "Ayer",
-        durationLabel = "38 min",
-        distanceLabel = "29 km",
-        maxSpeedLabel = "65 km/h",
-        avgSpeedLabel = "38 km/h",
-        statusLabel = "a tiempo",
-        wasOnTime = true,
-    ),
-    PastTrip(
-        id = "3",
-        originLabel = "Casa",
-        destinationLabel = "San Jacinto",
-        dateLabel = "Lun",
-        durationLabel = "1h 12min",
-        distanceLabel = "68 km",
-        maxSpeedLabel = "92 km/h",
-        avgSpeedLabel = "54 km/h",
-        statusLabel = "a tiempo",
-        wasOnTime = true,
-    ),
-)
+import com.techvibedev.triptrace.data.model.TripResponse
+import com.techvibedev.triptrace.data.repository.TripRepository
+import java.time.Duration
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
 
 @Composable
-fun HistoryScreen() {
+fun HistoryScreen(tripRepository: TripRepository) {
+    var trips by remember { mutableStateOf<List<TripResponse>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     var expandedTripId by remember { mutableStateOf<String?>(null) }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(mockPastTrips) { trip ->
-            PastTripCard(
-                trip = trip,
-                expanded = trip.id == expandedTripId,
-                onToggleExpanded = {
-                    expandedTripId = if (expandedTripId == trip.id) null else trip.id
-                },
-            )
+    LaunchedEffect(Unit) {
+        isLoading = true
+        val result = tripRepository.getCompletedTrips()
+        isLoading = false
+        result.fold(
+            onSuccess = { loaded ->
+                trips = loaded.sortedByDescending { it.endedAt ?: it.createdAt }
+                errorMessage = null
+            },
+            onFailure = { errorMessage = "No se pudo cargar el historial." },
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            isLoading -> {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            }
+            errorMessage != null -> {
+                Text(
+                    text = errorMessage ?: "",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(24.dp),
+                )
+            }
+            trips.isEmpty() -> {
+                Text(
+                    text = "Todavia no hay viajes completados.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(24.dp),
+                )
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(trips) { trip ->
+                        PastTripCard(
+                            trip = trip,
+                            expanded = trip.id == expandedTripId,
+                            onToggleExpanded = {
+                                expandedTripId = if (expandedTripId == trip.id) null else trip.id
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun PastTripCard(
-    trip: PastTrip,
+    trip: TripResponse,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
 ) {
@@ -128,12 +126,12 @@ private fun PastTripCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "${trip.originLabel} \u2192 ${trip.destinationLabel}",
+                    text = "${trip.originName} \u2192 ${trip.destinationName}",
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = trip.dateLabel,
+                        text = formatDate(trip.endedAt ?: trip.createdAt),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -154,31 +152,22 @@ private fun PastTripCard(
                 RouteMapPlaceholder()
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    TripStat(label = "Maxima", value = trip.maxSpeedLabel)
-                    TripStat(label = "Promedio", value = trip.avgSpeedLabel)
-                    TripStat(label = "Distancia", value = trip.distanceLabel)
+                    TripStat(label = "Maxima", value = formatSpeed(trip.maxSpeed))
+                    TripStat(label = "Promedio", value = formatSpeed(trip.avgSpeed))
+                    TripStat(label = "Distancia", value = formatDistance(trip.distanceKm))
                 }
             } else {
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(
-                        text = trip.durationLabel,
+                        text = formatDuration(trip.startedAt, trip.endedAt),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = trip.distanceLabel,
+                        text = formatDistance(trip.distanceKm),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = trip.statusLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (trip.wasOnTime) {
-                            MaterialTheme.colorScheme.tertiary
-                        } else {
-                            MaterialTheme.colorScheme.secondary
-                        },
                     )
                 }
             }
@@ -202,7 +191,7 @@ private fun TripStat(label: String, value: String) {
 }
 
 // Simplified placeholder for the actual route map, which needs a maps SDK
-// wired up to the recorded GPS points (see api#8 for that data).
+// wired up to the recorded GPS points.
 @Composable
 private fun RouteMapPlaceholder() {
     Box(
@@ -218,4 +207,35 @@ private fun RouteMapPlaceholder() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+private fun formatDate(isoDateTime: String?): String {
+    if (isoDateTime == null) return "--"
+    return try {
+        OffsetDateTime.parse(isoDateTime).format(DateTimeFormatter.ofPattern("dd/MM"))
+    } catch (e: Exception) {
+        "--"
+    }
+}
+
+private fun formatDuration(startedAt: String?, endedAt: String?): String {
+    if (startedAt == null || endedAt == null) return "--"
+    return try {
+        val duration = Duration.between(OffsetDateTime.parse(startedAt), OffsetDateTime.parse(endedAt))
+        val minutes = duration.toMinutes()
+        if (minutes >= 60) "${minutes / 60}h ${minutes % 60}min" else "${minutes}min"
+    } catch (e: Exception) {
+        "--"
+    }
+}
+
+// max_speed/avg_speed/distance_km already come from the API in the right
+// unit (km/h, km) — the m/s-vs-km/h conversion lives server-side
+// (trip-trace-api#41), not needed again here.
+private fun formatDistance(distanceKm: Double?): String {
+    return if (distanceKm != null) "${"%.1f".format(distanceKm)} km" else "--"
+}
+
+private fun formatSpeed(speedKmh: Double?): String {
+    return if (speedKmh != null) "${speedKmh.toInt()} km/h" else "--"
 }
