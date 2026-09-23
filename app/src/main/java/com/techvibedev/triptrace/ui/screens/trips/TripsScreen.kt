@@ -36,7 +36,9 @@ import androidx.compose.ui.unit.dp
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -105,6 +107,15 @@ fun TripsScreen(tripRepository: TripRepository, onStartTrip: (String) -> Unit) {
                                     )
                                 }
                             },
+                            onUseCurrentTime = { tripId ->
+                                scope.launch {
+                                    val result = tripRepository.useCurrentTimeAsDeparture(tripId)
+                                    result.fold(
+                                        onSuccess = { loadTrips() },
+                                        onFailure = { errorMessage = "No se pudo actualizar la hora." },
+                                    )
+                                }
+                            },
                         )
                     }
                 }
@@ -114,7 +125,11 @@ fun TripsScreen(tripRepository: TripRepository, onStartTrip: (String) -> Unit) {
 }
 
 @Composable
-private fun PlannedTripCard(trip: TripResponse, onStartTrip: (String) -> Unit) {
+private fun PlannedTripCard(
+    trip: TripResponse,
+    onStartTrip: (String) -> Unit,
+    onUseCurrentTime: (String) -> Unit,
+) {
     val isStale = isDepartureStale(trip.plannedDepartureAt)
 
     Card(
@@ -139,7 +154,7 @@ private fun PlannedTripCard(trip: TripResponse, onStartTrip: (String) -> Unit) {
                     )
                     Spacer(modifier = Modifier.size(6.dp))
                     Text(
-                        text = "Hora planeada (${formatTime(trip.plannedDepartureAt)}) ya paso",
+                        text = "Hora planeada (${formatLocalTime(trip.plannedDepartureAt)}) ya paso",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.secondary,
                     )
@@ -152,7 +167,7 @@ private fun PlannedTripCard(trip: TripResponse, onStartTrip: (String) -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     OutlinedButton(
-                        onClick = { /* TODO: update planned_departure_at to now */ },
+                        onClick = { onUseCurrentTime(trip.id) },
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("Usar hora actual")
@@ -177,7 +192,7 @@ private fun PlannedTripCard(trip: TripResponse, onStartTrip: (String) -> Unit) {
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
-                        text = "Sale ${formatTime(trip.plannedDepartureAt)}",
+                        text = "Sale ${formatLocalTime(trip.plannedDepartureAt)}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
@@ -191,19 +206,31 @@ private fun PlannedTripCard(trip: TripResponse, onStartTrip: (String) -> Unit) {
     }
 }
 
+// Small buffer so a departure time set to "right now" (via "Usar hora
+// actual") doesn't immediately count as stale again on the very next
+// recomposition/reload, a few hundred milliseconds later, before the user
+// even gets a chance to tap "Iniciar".
+private val STALE_GRACE_PERIOD: Duration = Duration.ofSeconds(60)
+
 private fun isDepartureStale(plannedDepartureAt: String?): Boolean {
     if (plannedDepartureAt == null) return false
     return try {
-        OffsetDateTime.parse(plannedDepartureAt).isBefore(OffsetDateTime.now())
+        OffsetDateTime.parse(plannedDepartureAt).isBefore(OffsetDateTime.now().minus(STALE_GRACE_PERIOD))
     } catch (e: Exception) {
         false
     }
 }
 
-private fun formatTime(isoDateTime: String?): String {
+// The API returns timestamps in UTC — formatting an OffsetDateTime directly
+// prints ITS OWN offset's hour, not the phone's local one, so without
+// converting first this showed UTC time as if it were local (e.g. showing
+// "20:34" while the phone's actual local time was 17:34, in UTC-3).
+private fun formatLocalTime(isoDateTime: String?): String {
     if (isoDateTime == null) return "--:--"
     return try {
-        OffsetDateTime.parse(isoDateTime).format(DateTimeFormatter.ofPattern("HH:mm"))
+        OffsetDateTime.parse(isoDateTime)
+            .atZoneSameInstant(ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("HH:mm"))
     } catch (e: Exception) {
         "--:--"
     }
