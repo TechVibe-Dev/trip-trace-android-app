@@ -15,6 +15,7 @@ data class TripCreateRequest(
 
 data class TripUpdateRequest(
     val status: String? = null,
+    @SerializedName("planned_departure_at") val plannedDepartureAt: String? = null,
     @SerializedName("started_at") val startedAt: String? = null,
     @SerializedName("ended_at") val endedAt: String? = null,
 )
