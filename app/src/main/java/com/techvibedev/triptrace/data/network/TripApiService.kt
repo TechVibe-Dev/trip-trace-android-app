@@ -2,6 +2,8 @@ package com.techvibedev.triptrace.data.network
 
 import com.techvibedev.triptrace.data.model.GpsPointCreateRequest
 import com.techvibedev.triptrace.data.model.GpsPointResponse
+import com.techvibedev.triptrace.data.model.StopCreateRequest
+import com.techvibedev.triptrace.data.model.StopResponse
 import com.techvibedev.triptrace.data.model.TripCreateRequest
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.model.TripUpdateRequest
@@ -58,4 +60,11 @@ interface TripApiService {
         @Header("Authorization") bearerToken: String,
         @Path("tripId") tripId: String,
     ): TripResponse
+
+    @POST("api/v1/trips/{tripId}/stops")
+    suspend fun createStop(
+        @Header("Authorization") bearerToken: String,
+        @Path("tripId") tripId: String,
+        @Body request: StopCreateRequest,
+    ): StopResponse
 }
