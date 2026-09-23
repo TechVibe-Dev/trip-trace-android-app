@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,7 @@ import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
 import com.techvibedev.triptrace.service.TripTrackingService
 import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 
 data class TripStop(
@@ -51,13 +53,18 @@ data class TripStop(
     val reached: Boolean,
 )
 
-// Mock data for now — will be replaced once this screen reads live GPS
-// points and the recalculated ETA from the API (api#7). The tracking itself
-// (foreground service writing points to Room) is real as of this PR.
+// Stops and the recalculated ETA are still mock — both need api#7 (progress
+// per stop, ETA recalculated from the current position). Current speed and
+// departure time below are real, read straight from Room, as of this PR.
 private val mockStops = listOf(
     TripStop(label = "Parada: Peaje Ruta 8", timeLabel = "14:10", reached = true),
     TripStop(label = "Destino: Oficina", timeLabel = "14:47", reached = false),
 )
+
+// GpsPoint.speed is stored in m/s (Android's Location.getSpeed() unit) —
+// same conversion applied server-side in trip-trace-api#41, needed again
+// here since this reads Room directly and never goes through the API.
+private const val MS_TO_KMH = 3.6
 
 @Composable
 fun ActiveTripScreen(
@@ -66,6 +73,12 @@ fun ActiveTripScreen(
     onTripEnded: () -> Unit,
 ) {
     val context = LocalContext.current
+    val gpsPointDao = remember {
+        TripTraceDatabase.getInstance(context.applicationContext).gpsPointDao()
+    }
+    val latestPoint by gpsPointDao.observeLatest(tripId).collectAsState(initial = null)
+
+    var startedAt by remember { mutableStateOf<String?>(null) }
     var isEnding by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -75,9 +88,13 @@ fun ActiveTripScreen(
     ) { granted ->
         if (granted) {
             scope.launch {
-                ensureTripSavedLocallyAndStartTracking(context, tripId, tripRepository) { message ->
-                    errorMessage = message
-                }
+                val result = ensureTripSavedLocallyAndStartTracking(context, tripId, tripRepository)
+                result.fold(
+                    onSuccess = { trip -> startedAt = trip.startedAt },
+                    onFailure = {
+                        errorMessage = "No se pudo cargar el viaje, no se inicio la grabacion."
+                    },
+                )
             }
         } else {
             errorMessage = "Se necesita permiso de ubicacion para grabar el viaje"
@@ -91,9 +108,13 @@ fun ActiveTripScreen(
         ) == PackageManager.PERMISSION_GRANTED
 
         if (hasPermission) {
-            ensureTripSavedLocallyAndStartTracking(context, tripId, tripRepository) { message ->
-                errorMessage = message
-            }
+            val result = ensureTripSavedLocallyAndStartTracking(context, tripId, tripRepository)
+            result.fold(
+                onSuccess = { trip -> startedAt = trip.startedAt },
+                onFailure = {
+                    errorMessage = "No se pudo cargar el viaje, no se inicio la grabacion."
+                },
+            )
         } else {
             permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
@@ -157,8 +178,16 @@ fun ActiveTripScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            StatCard(label = "Velocidad", value = "62 km/h", modifier = Modifier.weight(1f))
-            StatCard(label = "Salida", value = "13:58", modifier = Modifier.weight(1f))
+            StatCard(
+                label = "Velocidad",
+                value = formatSpeed(latestPoint?.speed),
+                modifier = Modifier.weight(1f),
+            )
+            StatCard(
+                label = "Salida",
+                value = formatTime(startedAt),
+                modifier = Modifier.weight(1f),
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -216,19 +245,14 @@ private suspend fun ensureTripSavedLocallyAndStartTracking(
     context: Context,
     tripId: String,
     tripRepository: TripRepository,
-    onError: (String) -> Unit,
-) {
+): Result<TripResponse> {
     val result = tripRepository.getTrip(tripId)
-    result.fold(
-        onSuccess = { trip ->
-            val tripDao = TripTraceDatabase.getInstance(context.applicationContext).tripDao()
-            tripDao.insert(trip.toEntity(syncedAt = OffsetDateTime.now().toString()))
-            TripTrackingService.start(context, tripId)
-        },
-        onFailure = {
-            onError("No se pudo cargar el viaje, no se inicio la grabacion.")
-        },
-    )
+    result.onSuccess { trip ->
+        val tripDao = TripTraceDatabase.getInstance(context.applicationContext).tripDao()
+        tripDao.insert(trip.toEntity(syncedAt = OffsetDateTime.now().toString()))
+        TripTrackingService.start(context, tripId)
+    }
+    return result
 }
 
 private fun TripResponse.toEntity(syncedAt: String): TripEntity {
@@ -322,5 +346,19 @@ private fun RouteMapPlaceholder() {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+private fun formatSpeed(speedMs: Double?): String {
+    if (speedMs == null) return "-- km/h"
+    return "${(speedMs * MS_TO_KMH).toInt()} km/h"
+}
+
+private fun formatTime(isoDateTime: String?): String {
+    if (isoDateTime == null) return "--:--"
+    return try {
+        OffsetDateTime.parse(isoDateTime).format(DateTimeFormatter.ofPattern("HH:mm"))
+    } catch (e: Exception) {
+        "--:--"
     }
 }
