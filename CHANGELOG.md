@@ -7,6 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Fixed CI: `android-actions/setup-android@v4` defaults to installing the deprecated `tools` SDK package, which Google stopped serving mid-September — broke every build. We don't need it (Gradle resolves its own SDK components), so `packages: ''` skips installing it.
 - Connected History screen to real API data (`GET /trips?status_filter=COMPLETED`) — distance, max/avg speed, duration. ([#49](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/49))
 - Added Room local database and a foreground service that records GPS points during an active trip (`TripTrackingService`), plus a "Finalizar viaje" action. Fixed a crash on "Iniciar" caused by `GpsPointEntity`'s foreign key having no matching `TripEntity` row — the trip is now fetched and saved to Room before tracking starts. Fixed duplicate/leaked GPS points across trips: the started Service gets reused by Android across `start()` calls, so `onStartCommand()` now removes any previous `LocationCallback` before registering a new one. ([#26](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/26))
 - Configured Dependabot (gradle + github-actions), monthly. ([#28](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/28), [#47](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/47))
