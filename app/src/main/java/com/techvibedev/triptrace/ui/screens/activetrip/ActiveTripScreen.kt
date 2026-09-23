@@ -44,6 +44,7 @@ import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
 import com.techvibedev.triptrace.service.TripTrackingService
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 
@@ -185,7 +186,7 @@ fun ActiveTripScreen(
             )
             StatCard(
                 label = "Salida",
-                value = formatTime(startedAt),
+                value = formatLocalTime(startedAt),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -354,10 +355,16 @@ private fun formatSpeed(speedMs: Double?): String {
     return "${(speedMs * MS_TO_KMH).toInt()} km/h"
 }
 
-private fun formatTime(isoDateTime: String?): String {
+// The API returns timestamps in UTC — formatting an OffsetDateTime directly
+// prints ITS OWN offset's hour, not the phone's local one. Converting to
+// the system zone first avoids showing e.g. "20:34" when the phone's real
+// local time is 17:34 (UTC-3) — same bug found and fixed in TripsScreen.
+private fun formatLocalTime(isoDateTime: String?): String {
     if (isoDateTime == null) return "--:--"
     return try {
-        OffsetDateTime.parse(isoDateTime).format(DateTimeFormatter.ofPattern("HH:mm"))
+        OffsetDateTime.parse(isoDateTime)
+            .atZoneSameInstant(ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("HH:mm"))
     } catch (e: Exception) {
         "--:--"
     }
