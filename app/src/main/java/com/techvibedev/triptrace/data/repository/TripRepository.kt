@@ -33,6 +33,14 @@ class TripRepository(
         }
     }
 
+    suspend fun getTrip(tripId: String): Result<TripResponse> {
+        return try {
+            Result.success(apiService.getTrip(authHeader(), tripId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun startTrip(tripId: String): Result<TripResponse> {
         return try {
             val request = TripUpdateRequest(
