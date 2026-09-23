@@ -124,7 +124,15 @@ fun TripTraceNavHost(navController: NavHostController = rememberNavController())
             }
             composable("${Routes.ACTIVE_TRIP}/{tripId}") { backStackEntry ->
                 val tripId = backStackEntry.arguments?.getString("tripId") ?: ""
-                ActiveTripScreen(tripId = tripId)
+                ActiveTripScreen(
+                    tripId = tripId,
+                    tripRepository = tripRepository,
+                    onTripEnded = {
+                        navController.navigate(Routes.TRIPS) {
+                            popUpTo(Routes.TRIPS) { inclusive = true }
+                        }
+                    },
+                )
             }
         }
     }

@@ -2,6 +2,7 @@ package com.techvibedev.triptrace.location
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Log
 import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -9,6 +10,8 @@ import com.google.android.gms.tasks.CancellationTokenSource
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
+
+private const val TAG = "LocationProvider"
 
 class LocationProvider(context: Context) {
 
@@ -36,9 +39,11 @@ class LocationProvider(context: Context) {
             if (location != null) {
                 Result.success(location.latitude to location.longitude)
             } else {
+                Log.e(TAG, "getCurrentLocation returned null (no location available)")
                 Result.failure(IllegalStateException("Location unavailable"))
             }
         } catch (e: Exception) {
+            Log.e(TAG, "getCurrentLocation failed", e)
             Result.failure(e)
         }
     }
