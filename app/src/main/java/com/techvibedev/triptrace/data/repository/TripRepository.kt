@@ -33,6 +33,14 @@ class TripRepository(
         }
     }
 
+    suspend fun getCompletedTrips(): Result<List<TripResponse>> {
+        return try {
+            Result.success(apiService.listTrips(authHeader(), statusFilter = "COMPLETED"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun getTrip(tripId: String): Result<TripResponse> {
         return try {
             Result.success(apiService.getTrip(authHeader(), tripId))
