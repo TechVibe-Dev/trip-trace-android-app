@@ -54,6 +54,17 @@ class TripTrackingService : Service() {
             return START_NOT_STICKY
         }
 
+        // A started Service is reused across calls — Android does not spin
+        // up a new instance just because start() was called again. Without
+        // this, a leftover callback from a previous trip (e.g. the app left
+        // ActiveTripScreen without hitting "Finalizar viaje") stays
+        // registered forever, so every location update gets written twice:
+        // once per trip. Tearing down any previous callback first guarantees
+        // at most one active tracking session per service instance.
+        if (::locationCallback.isInitialized) {
+            fusedLocationClient.removeLocationUpdates(locationCallback)
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
