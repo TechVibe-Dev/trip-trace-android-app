@@ -1,6 +1,7 @@
 package com.techvibedev.triptrace.ui.screens.activetrip
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,8 +37,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.techvibedev.triptrace.data.local.TripEntity
+import com.techvibedev.triptrace.data.local.TripTraceDatabase
+import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
 import com.techvibedev.triptrace.service.TripTrackingService
+import java.time.OffsetDateTime
 import kotlinx.coroutines.launch
 
 data class TripStop(
@@ -69,7 +74,11 @@ fun ActiveTripScreen(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            TripTrackingService.start(context, tripId)
+            scope.launch {
+                ensureTripSavedLocallyAndStartTracking(context, tripId, tripRepository) { message ->
+                    errorMessage = message
+                }
+            }
         } else {
             errorMessage = "Se necesita permiso de ubicacion para grabar el viaje"
         }
@@ -82,7 +91,9 @@ fun ActiveTripScreen(
         ) == PackageManager.PERMISSION_GRANTED
 
         if (hasPermission) {
-            TripTrackingService.start(context, tripId)
+            ensureTripSavedLocallyAndStartTracking(context, tripId, tripRepository) { message ->
+                errorMessage = message
+            }
         } else {
             permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
@@ -193,6 +204,58 @@ fun ActiveTripScreen(
             }
         }
     }
+}
+
+// GpsPointEntity has a foreign key on tripId pointing at Room's own trips
+// table — but trips are otherwise only known through the API, never
+// inserted into Room. Without this, the very first point the tracking
+// service tries to save crashes the app with SQLiteConstraintException
+// (FOREIGN KEY constraint failed). Fetching and saving the trip here,
+// before starting the service, closes that gap.
+private suspend fun ensureTripSavedLocallyAndStartTracking(
+    context: Context,
+    tripId: String,
+    tripRepository: TripRepository,
+    onError: (String) -> Unit,
+) {
+    val result = tripRepository.getTrip(tripId)
+    result.fold(
+        onSuccess = { trip ->
+            val tripDao = TripTraceDatabase.getInstance(context.applicationContext).tripDao()
+            tripDao.insert(trip.toEntity(syncedAt = OffsetDateTime.now().toString()))
+            TripTrackingService.start(context, tripId)
+        },
+        onFailure = {
+            onError("No se pudo cargar el viaje, no se inicio la grabacion.")
+        },
+    )
+}
+
+private fun TripResponse.toEntity(syncedAt: String): TripEntity {
+    return TripEntity(
+        id = id,
+        userId = userId,
+        originName = originName,
+        originLat = originLat,
+        originLng = originLng,
+        destinationName = destinationName,
+        destinationLat = destinationLat,
+        destinationLng = destinationLng,
+        plannedRoutePolyline = plannedRoutePolyline,
+        status = status,
+        plannedDepartureAt = plannedDepartureAt,
+        desiredArrivalAt = desiredArrivalAt,
+        calculatedArrivalAt = calculatedArrivalAt,
+        startedAt = startedAt,
+        endedAt = endedAt,
+        distanceKm = distanceKm,
+        maxSpeed = maxSpeed,
+        minSpeed = minSpeed,
+        avgSpeed = avgSpeed,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        syncedAt = syncedAt,
+    )
 }
 
 @Composable
