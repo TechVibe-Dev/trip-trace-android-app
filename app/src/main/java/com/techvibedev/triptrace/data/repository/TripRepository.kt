@@ -5,8 +5,8 @@ import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.model.TripUpdateRequest
 import com.techvibedev.triptrace.data.network.TripApiService
 import com.techvibedev.triptrace.data.session.TokenDataStore
-import kotlinx.coroutines.flow.first
 import java.time.OffsetDateTime
+import kotlinx.coroutines.flow.first
 
 class TripRepository(
     private val apiService: TripApiService,
@@ -33,11 +33,39 @@ class TripRepository(
         }
     }
 
+    suspend fun getCompletedTrips(): Result<List<TripResponse>> {
+        return try {
+            Result.success(apiService.listTrips(authHeader(), statusFilter = "COMPLETED"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getTrip(tripId: String): Result<TripResponse> {
+        return try {
+            Result.success(apiService.getTrip(authHeader(), tripId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun startTrip(tripId: String): Result<TripResponse> {
         return try {
             val request = TripUpdateRequest(
                 status = "IN_PROGRESS",
                 startedAt = OffsetDateTime.now().toString(),
+            )
+            Result.success(apiService.updateTrip(authHeader(), tripId, request))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun endTrip(tripId: String): Result<TripResponse> {
+        return try {
+            val request = TripUpdateRequest(
+                status = "COMPLETED",
+                endedAt = OffsetDateTime.now().toString(),
             )
             Result.success(apiService.updateTrip(authHeader(), tripId, request))
         } catch (e: Exception) {

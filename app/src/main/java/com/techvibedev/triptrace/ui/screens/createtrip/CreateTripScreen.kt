@@ -94,8 +94,12 @@ fun CreateTripScreen(
                 currentLat = lat
                 currentLng = lng
             },
-            onFailure = {
-                locationError = "No se pudo obtener tu ubicacion"
+            onFailure = { exception ->
+                // Shown directly on screen (not just Logcat) since testing
+                // happens straight on a real phone, without Android Studio
+                // attached to read logs.
+                val detail = exception.message ?: exception::class.simpleName ?: "error desconocido"
+                locationError = "No se pudo obtener tu ubicacion: $detail"
             },
         )
     }

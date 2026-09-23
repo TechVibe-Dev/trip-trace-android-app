@@ -26,7 +26,10 @@
             </intent-filter>
         </activity>
 
-        <!-- TODO: declare the trip-tracking foreground service once implemented -->
+        <service
+            android:name=".service.TripTrackingService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
 
     </application>
 
