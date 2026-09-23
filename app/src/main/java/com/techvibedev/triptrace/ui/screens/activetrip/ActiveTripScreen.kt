@@ -125,10 +125,34 @@ fun ActiveTripScreen(
         isEnding = true
         errorMessage = null
         scope.launch {
-            val result = tripRepository.endTrip(tripId)
+            // Sync (Room -> API) happens here, right before finalizing:
+            // /finalize computes distance/speed stats from whatever GPS
+            // points already exist on the server, so without uploading
+            // first, those stats always come back null.
+            val unsyncedPoints = gpsPointDao.getUnsyncedByTripId(tripId)
+            if (unsyncedPoints.isNotEmpty()) {
+                val uploadResult = tripRepository.uploadGpsPoints(tripId, unsyncedPoints)
+                // Best-effort: if this fails (no connectivity right as the
+                // trip ends, etc.), the points stay unsynced in Room —
+                // finalize below just computes over whatever did make it
+                // up. No automatic retry yet; a future sync pass could
+                // pick these up later.
+                uploadResult.onSuccess {
+                    gpsPointDao.markSynced(unsyncedPoints.map { point -> point.id })
+                }
+            }
+
+            val endResult = tripRepository.endTrip(tripId)
+            if (endResult.isSuccess) {
+                // Also best-effort — a failure here leaves the trip
+                // correctly COMPLETED with null stats, same degraded state
+                // as before Sync existed, not something worth blocking on.
+                tripRepository.finalizeTrip(tripId)
+            }
+
             TripTrackingService.stop(context)
             isEnding = false
-            result.fold(
+            endResult.fold(
                 onSuccess = { onTripEnded() },
                 onFailure = { errorMessage = "No se pudo finalizar el viaje." },
             )
