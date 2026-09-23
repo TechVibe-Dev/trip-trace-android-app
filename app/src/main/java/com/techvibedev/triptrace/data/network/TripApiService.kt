@@ -25,6 +25,12 @@ interface TripApiService {
         @Query("status_filter") statusFilter: String? = null,
     ): List<TripResponse>
 
+    @GET("api/v1/trips/{tripId}")
+    suspend fun getTrip(
+        @Header("Authorization") bearerToken: String,
+        @Path("tripId") tripId: String,
+    ): TripResponse
+
     @PATCH("api/v1/trips/{tripId}")
     suspend fun updateTrip(
         @Header("Authorization") bearerToken: String,
