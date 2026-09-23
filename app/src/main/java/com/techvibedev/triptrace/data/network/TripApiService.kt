@@ -37,4 +37,10 @@ interface TripApiService {
         @Path("tripId") tripId: String,
         @Body request: TripUpdateRequest,
     ): TripResponse
+
+    @POST("api/v1/trips/{tripId}/calculate-route")
+    suspend fun calculateRoute(
+        @Header("Authorization") bearerToken: String,
+        @Path("tripId") tripId: String,
+    ): TripResponse
 }
