@@ -3,6 +3,8 @@ package com.techvibedev.triptrace.data.repository
 import com.techvibedev.triptrace.data.local.GpsPointEntity
 import com.techvibedev.triptrace.data.model.GpsPointCreateRequest
 import com.techvibedev.triptrace.data.model.GpsPointResponse
+import com.techvibedev.triptrace.data.model.StopCreateRequest
+import com.techvibedev.triptrace.data.model.StopResponse
 import com.techvibedev.triptrace.data.model.TripCreateRequest
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.model.TripUpdateRequest
@@ -131,6 +133,14 @@ class TripRepository(
     suspend fun finalizeTrip(tripId: String): Result<TripResponse> {
         return try {
             Result.success(apiService.finalizeTrip(authHeader(), tripId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createStop(tripId: String, request: StopCreateRequest): Result<StopResponse> {
+        return try {
+            Result.success(apiService.createStop(authHeader(), tripId, request))
         } catch (e: Exception) {
             Result.failure(e)
         }

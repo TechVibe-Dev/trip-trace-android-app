@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.techvibedev.triptrace.data.model.StopCreateRequest
 import com.techvibedev.triptrace.data.model.TripCreateRequest
 import com.techvibedev.triptrace.data.repository.TripRepository
 import com.techvibedev.triptrace.location.GeocodingProvider
@@ -52,12 +53,13 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import kotlinx.coroutines.launch
 
 // Origin still falls back to a placeholder when the user opts out of
 // "Ubicacion actual" — there's no text field for typing a custom origin
-// address yet, only the current-location toggle. Destination is now
+// address yet, only the current-location toggle. Destination and stops are
 // geocoded from whatever text the user types (see GeocodingProvider).
 private const val PLACEHOLDER_LAT = -34.9011
 private const val PLACEHOLDER_LNG = -56.1645
@@ -80,8 +82,14 @@ fun CreateTripScreen(
     var destination by remember { mutableStateOf("") }
     val stops = remember { mutableStateListOf<String>() }
     var newStop by remember { mutableStateOf("") }
-    var departureTime by remember { mutableStateOf("18:30") }
-    var desiredArrivalTime by remember { mutableStateOf("19:15") }
+    // Departure defaults to right now — the most common case ("Guardar e
+    // iniciar ahora"). Desired arrival has no sensible default (we can't
+    // guess what time the user wants to arrive), so it starts empty; the
+    // field is optional on the API, an empty value just means "not set".
+    var departureTime by remember {
+        mutableStateOf(LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm")))
+    }
+    var desiredArrivalTime by remember { mutableStateOf("") }
     var isSaving by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -147,12 +155,25 @@ fun CreateTripScreen(
         errorMessage = null
         isSaving = true
         scope.launch {
-            val geocodeResult = geocodingProvider.geocode(destination)
-            val destinationCoords = geocodeResult.getOrNull()
+            val destinationCoords = geocodingProvider.geocode(destination).getOrNull()
             if (destinationCoords == null) {
                 isSaving = false
                 errorMessage = "No se encontro esa direccion, proba con otro texto"
                 return@launch
+            }
+
+            // Geocode every stop up front, same as the destination — if any
+            // one of them can't be resolved, nothing gets created yet, so
+            // we never end up with a trip whose stops are silently missing.
+            val geocodedStops = mutableListOf<Pair<String, Pair<Double, Double>>>()
+            for (stopName in stops) {
+                val stopCoords = geocodingProvider.geocode(stopName).getOrNull()
+                if (stopCoords == null) {
+                    isSaving = false
+                    errorMessage = "No se encontro la parada \"$stopName\", proba con otro texto"
+                    return@launch
+                }
+                geocodedStops.add(stopName to stopCoords)
             }
 
             val originLat = if (useCurrentLocation) currentLat!! else PLACEHOLDER_LAT
@@ -170,10 +191,21 @@ fun CreateTripScreen(
             val result = tripRepository.createTrip(request)
             result.fold(
                 onSuccess = { trip ->
-                    // Best-effort: an ETA/route is a nice-to-have, not a
-                    // reason to block saving the trip if Google Routes has
-                    // a hiccup (rate limit, no connectivity, etc). Result
-                    // intentionally ignored here.
+                    // Best-effort from here on — the trip itself already
+                    // exists at this point (geocoding already validated
+                    // everything above), so a stop or route hiccup
+                    // shouldn't trap the user on this screen.
+                    geocodedStops.forEachIndexed { index, (name, coords) ->
+                        val stopRequest = StopCreateRequest(
+                            type = "PLANNED",
+                            name = name,
+                            lat = coords.first,
+                            lng = coords.second,
+                            sequence = index,
+                        )
+                        tripRepository.createStop(trip.id, stopRequest)
+                    }
+
                     tripRepository.calculateRoute(trip.id)
 
                     if (startNow) {
@@ -279,7 +311,7 @@ fun CreateTripScreen(
             OutlinedTextField(
                 value = desiredArrivalTime,
                 onValueChange = { desiredArrivalTime = it },
-                label = { Text("Quiero llegar") },
+                label = { Text("Quiero llegar (opcional)") },
                 singleLine = true,
                 enabled = !isSaving,
                 modifier = Modifier.weight(1f),
