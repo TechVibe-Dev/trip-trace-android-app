@@ -53,6 +53,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import kotlinx.coroutines.launch
 
@@ -81,8 +82,14 @@ fun CreateTripScreen(
     var destination by remember { mutableStateOf("") }
     val stops = remember { mutableStateListOf<String>() }
     var newStop by remember { mutableStateOf("") }
-    var departureTime by remember { mutableStateOf("18:30") }
-    var desiredArrivalTime by remember { mutableStateOf("19:15") }
+    // Departure defaults to right now — the most common case ("Guardar e
+    // iniciar ahora"). Desired arrival has no sensible default (we can't
+    // guess what time the user wants to arrive), so it starts empty; the
+    // field is optional on the API, an empty value just means "not set".
+    var departureTime by remember {
+        mutableStateOf(LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm")))
+    }
+    var desiredArrivalTime by remember { mutableStateOf("") }
     var isSaving by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -304,7 +311,7 @@ fun CreateTripScreen(
             OutlinedTextField(
                 value = desiredArrivalTime,
                 onValueChange = { desiredArrivalTime = it },
-                label = { Text("Quiero llegar") },
+                label = { Text("Quiero llegar (opcional)") },
                 singleLine = true,
                 enabled = !isSaving,
                 modifier = Modifier.weight(1f),
