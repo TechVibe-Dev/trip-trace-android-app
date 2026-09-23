@@ -7,6 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Create trip now calls `POST /trips/{id}/calculate-route` after saving (best-effort — a failure there doesn't block saving the trip). Wired the "Usar hora actual" button on stale planned trips (previously a no-op) to `PATCH planned_departure_at`. ([#50](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/50))
 - Added Room local database and a foreground service that records GPS points during an active trip (`TripTrackingService`), plus a "Finalizar viaje" action. Fixed a crash on "Iniciar" caused by `GpsPointEntity`'s foreign key having no matching `TripEntity` row — the trip is now fetched and saved to Room before tracking starts. Fixed duplicate/leaked GPS points across trips: the started Service gets reused by Android across `start()` calls, so `onStartCommand()` now removes any previous `LocationCallback` before registering a new one. ([#26](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/26))
 - Configured Dependabot (gradle + github-actions), monthly. ([#28](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/28), [#47](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/47))
 - Wired real GPS location into Create trip (runtime permission + `FusedLocationProviderClient`). ([#25](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/25))
