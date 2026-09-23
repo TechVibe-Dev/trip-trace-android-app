@@ -1,5 +1,8 @@
 package com.techvibedev.triptrace.data.repository
 
+import com.techvibedev.triptrace.data.local.GpsPointEntity
+import com.techvibedev.triptrace.data.model.GpsPointCreateRequest
+import com.techvibedev.triptrace.data.model.GpsPointResponse
 import com.techvibedev.triptrace.data.model.TripCreateRequest
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.model.TripUpdateRequest
@@ -92,6 +95,42 @@ class TripRepository(
     suspend fun calculateRoute(tripId: String): Result<TripResponse> {
         return try {
             Result.success(apiService.calculateRoute(authHeader(), tripId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Uploads a batch of locally-recorded GPS points (Room) to the API.
+    // Caller is responsible for marking them synced in Room once this
+    // succeeds — this function only talks to the network.
+    suspend fun uploadGpsPoints(
+        tripId: String,
+        points: List<GpsPointEntity>,
+    ): Result<List<GpsPointResponse>> {
+        return try {
+            val requests = points.map {
+                GpsPointCreateRequest(
+                    lat = it.lat,
+                    lng = it.lng,
+                    speed = it.speed,
+                    accuracy = it.accuracy,
+                    bearing = it.bearing,
+                    recordedAt = it.recordedAt,
+                )
+            }
+            Result.success(apiService.uploadGpsPoints(authHeader(), tripId, requests))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Best-effort, same reasoning as calculateRoute: computes distance/speed
+    // stats server-side from whatever points already made it up for this
+    // trip. Call after uploadGpsPoints for real numbers — with no synced
+    // points yet, the API just returns nulls.
+    suspend fun finalizeTrip(tripId: String): Result<TripResponse> {
+        return try {
+            Result.success(apiService.finalizeTrip(authHeader(), tripId))
         } catch (e: Exception) {
             Result.failure(e)
         }
