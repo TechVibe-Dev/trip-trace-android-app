@@ -37,6 +37,7 @@ import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
 import java.time.Duration
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -131,7 +132,7 @@ private fun PastTripCard(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = formatDate(trip.endedAt ?: trip.createdAt),
+                        text = formatLocalDate(trip.endedAt ?: trip.createdAt),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -209,10 +210,17 @@ private fun RouteMapPlaceholder() {
     }
 }
 
-private fun formatDate(isoDateTime: String?): String {
+// The API returns timestamps in UTC — formatting an OffsetDateTime directly
+// prints ITS OWN offset's date/hour, not the phone's local one. Without
+// converting first, a trip that ended late at night local time could even
+// show the WRONG DAY (e.g. 23:30 in UTC-3 is already past midnight in UTC).
+// Same bug found and fixed in TripsScreen/ActiveTripScreen.
+private fun formatLocalDate(isoDateTime: String?): String {
     if (isoDateTime == null) return "--"
     return try {
-        OffsetDateTime.parse(isoDateTime).format(DateTimeFormatter.ofPattern("dd/MM"))
+        OffsetDateTime.parse(isoDateTime)
+            .atZoneSameInstant(ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("dd/MM"))
     } catch (e: Exception) {
         "--"
     }
