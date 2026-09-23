@@ -105,7 +105,7 @@ fun TripTraceNavHost(navController: NavHostController = rememberNavController())
                 )
             }
             composable(Routes.HISTORY) {
-                HistoryScreen()
+                HistoryScreen(tripRepository = tripRepository)
             }
             composable(Routes.CREATE_TRIP) {
                 CreateTripScreen(
