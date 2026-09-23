@@ -7,6 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Sync: recorded GPS points now upload to the API (`POST /trips/{id}/gps-points`) when a trip finishes, before calling `/finalize` — `distance_km`/`max_speed`/`min_speed`/`avg_speed` are computed from real data instead of always coming back null. Best-effort: a failed upload leaves points unsynced in Room for a later retry, without blocking the trip from being marked `COMPLETED`. ([#55](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/55))
 - Active trip screen now shows real current speed (live, via a Room `Flow`) and real departure time — replaces two of the mock stat cards. ETA and stop progress still mock, pending `api#7`. ([#51](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/51))
 - Fixed History showing timestamps in UTC labeled as local time (could even show the wrong day for a trip that ended late at night). Same bug fixed in the still-open PR #50 (Viajes) and #51 (Viaje en tiempo real). ([#53](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/53))
 - Create trip now calls `POST /trips/{id}/calculate-route` after saving (best-effort — a failure there doesn't block saving the trip). Wired the "Usar hora actual" button on stale planned trips (previously a no-op) to `PATCH planned_departure_at`. ([#50](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/50))
