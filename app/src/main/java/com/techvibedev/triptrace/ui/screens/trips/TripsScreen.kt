@@ -105,6 +105,15 @@ fun TripsScreen(tripRepository: TripRepository, onStartTrip: (String) -> Unit) {
                                     )
                                 }
                             },
+                            onUseCurrentTime = { tripId ->
+                                scope.launch {
+                                    val result = tripRepository.useCurrentTimeAsDeparture(tripId)
+                                    result.fold(
+                                        onSuccess = { loadTrips() },
+                                        onFailure = { errorMessage = "No se pudo actualizar la hora." },
+                                    )
+                                }
+                            },
                         )
                     }
                 }
@@ -114,7 +123,11 @@ fun TripsScreen(tripRepository: TripRepository, onStartTrip: (String) -> Unit) {
 }
 
 @Composable
-private fun PlannedTripCard(trip: TripResponse, onStartTrip: (String) -> Unit) {
+private fun PlannedTripCard(
+    trip: TripResponse,
+    onStartTrip: (String) -> Unit,
+    onUseCurrentTime: (String) -> Unit,
+) {
     val isStale = isDepartureStale(trip.plannedDepartureAt)
 
     Card(
@@ -152,7 +165,7 @@ private fun PlannedTripCard(trip: TripResponse, onStartTrip: (String) -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     OutlinedButton(
-                        onClick = { /* TODO: update planned_departure_at to now */ },
+                        onClick = { onUseCurrentTime(trip.id) },
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("Usar hora actual")
