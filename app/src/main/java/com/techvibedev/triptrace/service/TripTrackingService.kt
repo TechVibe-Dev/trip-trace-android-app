@@ -144,13 +144,6 @@ class TripTrackingService : Service() {
         const val EXTRA_TRIP_ID = "extra_trip_id"
         private const val CHANNEL_ID = "trip_tracking_channel"
         private const val NOTIFICATION_ID = 1001
-        // Lowered from 10s/5s after a real driving test: the live map felt
-        // laggy (points, speed, and the route polyline all only updated
-        // every ~10s) and the polyline visibly cut corners between distant
-        // points instead of following the street. 3s/1.5s keeps roughly the
-        // same 2:1 ratio between requested and minimum interval, gives ~3x
-        // point density, and is still well within what Room/the 30s API
-        // sync comfortably handles for a normal trip length.
         private const val LOCATION_INTERVAL_MS = 3_000L
         private const val LOCATION_MIN_INTERVAL_MS = 1_500L
 
