@@ -1,4 +1,4 @@
-package com.joaquindev.triptrace
+package com.techvibedev.triptrace
 
 import android.app.Application
 
