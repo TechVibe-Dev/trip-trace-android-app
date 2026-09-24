@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,7 +33,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.compose.rememberMarkerState
+import com.techvibedev.triptrace.data.model.GpsPointResponse
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
 import java.time.Duration
@@ -95,6 +107,7 @@ fun HistoryScreen(tripRepository: TripRepository) {
                     items(trips) { trip ->
                         PastTripCard(
                             trip = trip,
+                            tripRepository = tripRepository,
                             expanded = trip.id == expandedTripId,
                             onToggleExpanded = {
                                 expandedTripId = if (expandedTripId == trip.id) null else trip.id
@@ -110,6 +123,7 @@ fun HistoryScreen(tripRepository: TripRepository) {
 @Composable
 private fun PastTripCard(
     trip: TripResponse,
+    tripRepository: TripRepository,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
 ) {
@@ -150,7 +164,7 @@ private fun PastTripCard(
 
             if (expanded) {
                 Spacer(modifier = Modifier.height(10.dp))
-                RouteMapPlaceholder()
+                RealRouteMap(tripId = trip.id, tripRepository = tripRepository)
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     TripStat(label = "Maxima", value = formatSpeed(trip.maxSpeed))
@@ -191,22 +205,83 @@ private fun TripStat(label: String, value: String) {
     }
 }
 
-// Simplified placeholder for the actual route map, which needs a maps SDK
-// wired up to the recorded GPS points.
+// Draws the trip's REAL recorded path (GET /trips/{id}/gps-points) — not
+// planned_route_polyline (Google's suggested route at creation time), which
+// can diverge from what actually happened (detours, ending early). See
+// android#57. Loaded lazily, only once the card is expanded, since fetching
+// points for every trip in the list up front would be wasteful.
 @Composable
-private fun RouteMapPlaceholder() {
+private fun RealRouteMap(tripId: String, tripRepository: TripRepository) {
+    var points by remember(tripId) { mutableStateOf<List<GpsPointResponse>>(emptyList()) }
+    var isLoading by remember(tripId) { mutableStateOf(true) }
+    var loadError by remember(tripId) { mutableStateOf(false) }
+
+    LaunchedEffect(tripId) {
+        val result = tripRepository.getGpsPoints(tripId)
+        result.fold(
+            onSuccess = { points = it },
+            onFailure = { loadError = true },
+        )
+        isLoading = false
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(96.dp)
-            .background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp)),
+            .height(140.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = "Mapa de la ruta",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        when {
+            isLoading -> {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+            loadError -> {
+                Text(
+                    text = "No se pudo cargar el mapa",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            points.size < 2 -> {
+                Text(
+                    text = "Sin puntos suficientes para mostrar la ruta",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> {
+                val routePoints = points.map { LatLng(it.lat, it.lng) }
+                val cameraPositionState = rememberCameraPositionState()
+
+                GoogleMap(
+                    modifier = Modifier.fillMaxSize(),
+                    cameraPositionState = cameraPositionState,
+                    uiSettings = MapUiSettings(
+                        zoomControlsEnabled = false,
+                        scrollGesturesEnabled = false,
+                        zoomGesturesEnabled = false,
+                        rotationGesturesEnabled = false,
+                        tiltGesturesEnabled = false,
+                    ),
+                    // Bounds-fitting needs the map to already have real
+                    // pixel dimensions, or it throws — onMapLoaded fires
+                    // once that's guaranteed, unlike a plain LaunchedEffect
+                    // keyed on the points themselves.
+                    onMapLoaded = {
+                        val bounds = LatLngBounds.Builder().apply {
+                            routePoints.forEach { include(it) }
+                        }.build()
+                        cameraPositionState.move(CameraUpdateFactory.newLatLngBounds(bounds, 24))
+                    },
+                ) {
+                    Polyline(points = routePoints, color = MaterialTheme.colorScheme.primary)
+                    Marker(state = rememberMarkerState(position = routePoints.first()))
+                    Marker(state = rememberMarkerState(position = routePoints.last()))
+                }
+            }
+        }
     }
 }
 
