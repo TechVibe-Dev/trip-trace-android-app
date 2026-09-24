@@ -7,6 +7,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 24 Sep 2026
+
+- Active trip screen now polls every 30s: syncs unsynced GPS points (Room → API), refreshes the live ETA (`POST /trips/{id}/recalculate-eta`) and stop progress (`GET /trips/{id}/stops`, `actual_arrival_at` detected server-side). Replaces the remaining mock data on this screen. Best-effort throughout — a failed tick just retries on the next one. ([#66](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/66))
+- Active trip screen now shows a real live map, full-screen with the stat cards floating on top (semi-transparent) instead of stacked above it — current position (a rotating navigation arrow matching recorded bearing, instead of a generic pin), route recorded so far, and origin/destination/stop markers, sourced from Room in real time (not tied to the 30s API sync), camera following like a navigation app. The stops card is now always shown, with the destination as a permanent last row (previously hidden entirely when a trip had no intermediate stops). Fixed a stop-creation failure in Create trip being completely silent — now logged, so it's diagnosable via Logcat instead of vanishing without a trace. Closes `android#7`. ([#67](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/67))
+- Applied a dark map style (Google's official "Night Mode" JSON) to both Google Maps instances (History's route map, the live trip map) — previously the light default palette clashed with the rest of the (dark-themed) app. Closes `android#68`. ([#70](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/70))
+
 ## [0.2.0] - 23 Sep 2026
 
 - Replaced the "Mapa de la ruta" placeholder in History with a real map (Google Maps SDK + `maps-compose`), showing each trip's actual recorded GPS path (`GET /trips/{id}/gps-points`), not the planned route. Loaded lazily, only when a card is expanded. ([#62](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/62))
