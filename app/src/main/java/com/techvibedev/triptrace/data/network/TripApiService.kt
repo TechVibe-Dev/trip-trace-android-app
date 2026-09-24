@@ -1,5 +1,6 @@
 package com.techvibedev.triptrace.data.network
 
+import com.techvibedev.triptrace.data.model.EtaRecalculationResponse
 import com.techvibedev.triptrace.data.model.GpsPointCreateRequest
 import com.techvibedev.triptrace.data.model.GpsPointResponse
 import com.techvibedev.triptrace.data.model.StopCreateRequest
@@ -48,6 +49,12 @@ interface TripApiService {
         @Path("tripId") tripId: String,
     ): TripResponse
 
+    @POST("api/v1/trips/{tripId}/recalculate-eta")
+    suspend fun recalculateEta(
+        @Header("Authorization") bearerToken: String,
+        @Path("tripId") tripId: String,
+    ): EtaRecalculationResponse
+
     @POST("api/v1/trips/{tripId}/gps-points")
     suspend fun uploadGpsPoints(
         @Header("Authorization") bearerToken: String,
@@ -73,4 +80,10 @@ interface TripApiService {
         @Path("tripId") tripId: String,
         @Body request: StopCreateRequest,
     ): StopResponse
+
+    @GET("api/v1/trips/{tripId}/stops")
+    suspend fun listStops(
+        @Header("Authorization") bearerToken: String,
+        @Path("tripId") tripId: String,
+    ): List<StopResponse>
 }
