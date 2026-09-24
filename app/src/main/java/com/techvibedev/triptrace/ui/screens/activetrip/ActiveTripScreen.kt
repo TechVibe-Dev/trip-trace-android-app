@@ -501,9 +501,6 @@ private fun LiveRouteMap(
     val points by gpsPointDao.observeAllByTripId(tripId).collectAsState(initial = emptyList())
     val cameraPositionState = rememberCameraPositionState()
     var hasCenteredOnce by remember { mutableStateOf(false) }
-    // Waze/driving-mode style arrow instead of a generic pin for "where I
-    // am right now" — rotated below to match the latest recorded bearing.
-    val navArrowIcon = remember { vectorToBitmapDescriptor(context, R.drawable.ic_nav_arrow) }
 
     LaunchedEffect(points.size) {
         val latest = points.lastOrNull() ?: return@LaunchedEffect
@@ -534,6 +531,16 @@ private fun LiveRouteMap(
                 )
             }
         } else {
+            // Computed here, not above the points.isEmpty() check — this is
+            // the first point in composition where a GoogleMap is actually
+            // about to exist. BitmapDescriptorFactory throws
+            // IllegalStateException if called before the Maps system has
+            // been initialized (normally triggered by creating a map), so
+            // building this any earlier — e.g. unconditionally at the top
+            // of this function, which used to crash "Iniciar viaje" every
+            // time, since the very first composition always has zero
+            // points recorded yet — is not safe.
+            val navArrowIcon = remember { vectorToBitmapDescriptor(context, R.drawable.ic_nav_arrow) }
             val latest = points.last()
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
