@@ -147,6 +147,15 @@ fun CreateTripScreen(
     }
 
     fun save(startNow: Boolean) {
+        // If the user typed a stop but never tapped "+" to add it, commit
+        // it now instead of silently losing it — this turned out to be the
+        // actual reason stops weren't getting saved despite being typed:
+        // the pending text just sat in the field, never entering `stops`.
+        if (newStop.isNotBlank()) {
+            stops.add(newStop)
+            newStop = ""
+        }
+
         if (destination.isBlank()) {
             errorMessage = "Ingresa un destino"
             return
