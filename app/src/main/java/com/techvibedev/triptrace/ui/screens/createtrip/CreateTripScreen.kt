@@ -2,6 +2,7 @@ package com.techvibedev.triptrace.ui.screens.createtrip
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -63,6 +64,8 @@ import kotlinx.coroutines.launch
 // geocoded from whatever text the user types (see GeocodingProvider).
 private const val PLACEHOLDER_LAT = -34.9011
 private const val PLACEHOLDER_LNG = -56.1645
+
+private const val LOG_TAG = "CreateTripScreen"
 
 @Composable
 fun CreateTripScreen(
@@ -194,7 +197,11 @@ fun CreateTripScreen(
                     // Best-effort from here on — the trip itself already
                     // exists at this point (geocoding already validated
                     // everything above), so a stop or route hiccup
-                    // shouldn't trap the user on this screen.
+                    // shouldn't trap the user on this screen. Failures are
+                    // logged rather than surfaced (we're about to navigate
+                    // away, so an on-screen error here would never be
+                    // seen) — check Logcat for this tag if a stop seems to
+                    // go missing.
                     geocodedStops.forEachIndexed { index, (name, coords) ->
                         val stopRequest = StopCreateRequest(
                             type = "PLANNED",
@@ -203,7 +210,10 @@ fun CreateTripScreen(
                             lng = coords.second,
                             sequence = index,
                         )
-                        tripRepository.createStop(trip.id, stopRequest)
+                        val stopResult = tripRepository.createStop(trip.id, stopRequest)
+                        stopResult.onFailure { e ->
+                            Log.w(LOG_TAG, "Failed to save stop \"$name\" for trip ${trip.id}", e)
+                        }
                     }
 
                     tripRepository.calculateRoute(trip.id)
