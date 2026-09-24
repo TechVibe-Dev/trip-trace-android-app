@@ -209,7 +209,9 @@ private fun TripStat(label: String, value: String) {
 // planned_route_polyline (Google's suggested route at creation time), which
 // can diverge from what actually happened (detours, ending early). See
 // android#57. Loaded lazily, only once the card is expanded, since fetching
-// points for every trip in the list up front would be wasteful.
+// points for every trip in the list up front would be wasteful. Sized
+// generously (280.dp) since it's the main content of the expanded card, not
+// a small preview — the card grows to fit it via animateContentSize above.
 @Composable
 private fun RealRouteMap(tripId: String, tripRepository: TripRepository) {
     var points by remember(tripId) { mutableStateOf<List<GpsPointResponse>>(emptyList()) }
@@ -228,7 +230,7 @@ private fun RealRouteMap(tripId: String, tripRepository: TripRepository) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(140.dp)
+            .height(280.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center,
@@ -273,7 +275,7 @@ private fun RealRouteMap(tripId: String, tripRepository: TripRepository) {
                         val bounds = LatLngBounds.Builder().apply {
                             routePoints.forEach { include(it) }
                         }.build()
-                        cameraPositionState.move(CameraUpdateFactory.newLatLngBounds(bounds, 24))
+                        cameraPositionState.move(CameraUpdateFactory.newLatLngBounds(bounds, 48))
                     },
                 ) {
                     Polyline(points = routePoints, color = MaterialTheme.colorScheme.primary)
