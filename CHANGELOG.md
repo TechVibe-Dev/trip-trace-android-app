@@ -7,6 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Replaced the "Mapa de la ruta" placeholder in History with a real map (Google Maps SDK + `maps-compose`), showing each trip's actual recorded GPS path (`GET /trips/{id}/gps-points`), not the planned route. Loaded lazily, only when a card is expanded. ([#62](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/62))
 - Debug builds now sign with a fixed, committed keystore instead of an auto-generated one, giving a stable SHA-1 across CI runs and local machines — needed to restrict Google API keys (e.g. Maps SDK, `android#57`) to this app. ([#61](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/61))
 - Fixed stops being silently discarded on save — Create trip now geocodes each one and creates it via `POST /trips/{id}/stops` (`type: PLANNED`). Validates the destination and all stops up front; if any address can't be resolved, nothing is created. Departure time now defaults to the current time instead of a hardcoded 18:30; desired arrival defaults to empty instead of a hardcoded 19:15 (it's optional, an invented default didn't make sense). ([#60](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/60))
 - Create trip now geocodes the typed destination (Android's built-in `Geocoder`, no API key) instead of always using placeholder coordinates. Shows an error and doesn't save if the address can't be resolved. ([#56](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/56))
