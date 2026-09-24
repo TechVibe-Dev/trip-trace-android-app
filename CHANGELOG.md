@@ -7,6 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Active trip screen now shows a real live map — current position and the route recorded so far, sourced from Room in real time (not tied to the 30s API sync), camera following like a navigation app. Closes `android#7`. ([#67](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/67))
 - Active trip screen now polls every 30s: syncs unsynced GPS points (Room → API), refreshes the live ETA (`POST /trips/{id}/recalculate-eta`) and stop progress (`GET /trips/{id}/stops`, `actual_arrival_at` detected server-side). Replaces the remaining mock data on this screen. Best-effort throughout — a failed tick just retries on the next one. ([#66](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/66))
 
 ## [0.2.0] - 23 Sep 2026
