@@ -114,3 +114,21 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.maps.compose)
 }
+
+// maps-compose pulls in androidx.core:core-ktx/core transitively at a
+// version newer than ours (1.15.0) — that newer version requires a
+// compileSdk we're not on yet (android#21, deferred on purpose). We already
+// declare core-ktx 1.15.0 ourselves and it's confirmed compileSdk-35-safe
+// (per AndroidX's own release notes), so force every configuration to that
+// version rather than whatever maps-compose's own dependency graph asks
+// for. Narrower and more direct than hunting for an older maps-compose
+// release that happens to predate the bump — and keeps working regardless
+// of which maps-compose version we're on.
+configurations.all {
+    resolutionStrategy {
+        force(
+            "androidx.core:core-ktx:${libs.versions.coreKtx.get()}",
+            "androidx.core:core:${libs.versions.coreKtx.get()}",
+        )
+    }
+}
