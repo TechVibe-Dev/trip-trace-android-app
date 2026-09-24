@@ -7,6 +7,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Active trip screen now polls every 30s: syncs unsynced GPS points (Room → API), refreshes the live ETA (`POST /trips/{id}/recalculate-eta`) and stop progress (`GET /trips/{id}/stops`, `actual_arrival_at` detected server-side). Replaces the remaining mock data on this screen. Best-effort throughout — a failed tick just retries on the next one. ([#66](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/66))
+
 ## [0.2.0] - 23 Sep 2026
 
 - Replaced the "Mapa de la ruta" placeholder in History with a real map (Google Maps SDK + `maps-compose`), showing each trip's actual recorded GPS path (`GET /trips/{id}/gps-points`), not the planned route. Loaded lazily, only when a card is expanded. ([#62](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/62))

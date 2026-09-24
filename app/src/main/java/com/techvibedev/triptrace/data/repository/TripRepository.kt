@@ -1,6 +1,7 @@
 package com.techvibedev.triptrace.data.repository
 
 import com.techvibedev.triptrace.data.local.GpsPointEntity
+import com.techvibedev.triptrace.data.model.EtaRecalculationResponse
 import com.techvibedev.triptrace.data.model.GpsPointCreateRequest
 import com.techvibedev.triptrace.data.model.GpsPointResponse
 import com.techvibedev.triptrace.data.model.StopCreateRequest
@@ -102,6 +103,18 @@ class TripRepository(
         }
     }
 
+    // Live ETA from the trip's current position (latest synced GPS point),
+    // NOT persisted server-side — calculated_arrival_at on the trip keeps
+    // meaning "the original plan". Callers (ActiveTripScreen's 30s poll)
+    // hold onto the result themselves.
+    suspend fun recalculateEta(tripId: String): Result<EtaRecalculationResponse> {
+        return try {
+            Result.success(apiService.recalculateEta(authHeader(), tripId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     // Uploads a batch of locally-recorded GPS points (Room) to the API.
     // Caller is responsible for marking them synced in Room once this
     // succeeds — this function only talks to the network.
@@ -151,6 +164,17 @@ class TripRepository(
     suspend fun createStop(tripId: String, request: StopCreateRequest): Result<StopResponse> {
         return try {
             Result.success(apiService.createStop(authHeader(), tripId, request))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Reached stops have actual_arrival_at set server-side (see api#7's
+    // stop-detection, triggered as a side effect of uploadGpsPoints) — this
+    // just reads the current state, no client-side proximity logic.
+    suspend fun getStops(tripId: String): Result<List<StopResponse>> {
+        return try {
+            Result.success(apiService.listStops(authHeader(), tripId))
         } catch (e: Exception) {
             Result.failure(e)
         }
