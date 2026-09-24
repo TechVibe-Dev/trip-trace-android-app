@@ -40,12 +40,14 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.techvibedev.triptrace.data.local.TripEntity
 import com.techvibedev.triptrace.data.local.TripTraceDatabase
+import com.techvibedev.triptrace.data.model.StopResponse
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
 import com.techvibedev.triptrace.service.TripTrackingService
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 data class TripStop(
@@ -54,18 +56,18 @@ data class TripStop(
     val reached: Boolean,
 )
 
-// Stops and the recalculated ETA are still mock — both need api#7 (progress
-// per stop, ETA recalculated from the current position). Current speed and
-// departure time below are real, read straight from Room, as of this PR.
-private val mockStops = listOf(
-    TripStop(label = "Parada: Peaje Ruta 8", timeLabel = "14:10", reached = true),
-    TripStop(label = "Destino: Oficina", timeLabel = "14:47", reached = false),
-)
-
 // GpsPoint.speed is stored in m/s (Android's Location.getSpeed() unit) —
 // same conversion applied server-side in trip-trace-api#41, needed again
 // here since this reads Room directly and never goes through the API.
 private const val MS_TO_KMH = 3.6
+
+// How often, while a trip is in progress, we (a) upload any GPS points Room
+// has recorded since the last tick and (b) refresh the live ETA and stop
+// progress from the API. Chosen as a balance: frequent enough that the
+// screen feels live, infrequent enough not to hammer Google Routes (each
+// recalculate-eta is a billable-ish call, see routing_service.py) or the
+// device's radio/battery. Matches the interval agreed on with api#7.
+private const val POLL_INTERVAL_MS = 30_000L
 
 @Composable
 fun ActiveTripScreen(
@@ -80,6 +82,9 @@ fun ActiveTripScreen(
     val latestPoint by gpsPointDao.observeLatest(tripId).collectAsState(initial = null)
 
     var startedAt by remember { mutableStateOf<String?>(null) }
+    var plannedArrivalAt by remember { mutableStateOf<String?>(null) }
+    var liveArrivalAt by remember { mutableStateOf<String?>(null) }
+    var stops by remember { mutableStateOf<List<StopResponse>>(emptyList()) }
     var isEnding by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -91,7 +96,10 @@ fun ActiveTripScreen(
             scope.launch {
                 val result = ensureTripSavedLocallyAndStartTracking(context, tripId, tripRepository)
                 result.fold(
-                    onSuccess = { trip -> startedAt = trip.startedAt },
+                    onSuccess = { trip ->
+                        startedAt = trip.startedAt
+                        plannedArrivalAt = trip.calculatedArrivalAt
+                    },
                     onFailure = {
                         errorMessage = "No se pudo cargar el viaje, no se inicio la grabacion."
                     },
@@ -111,7 +119,10 @@ fun ActiveTripScreen(
         if (hasPermission) {
             val result = ensureTripSavedLocallyAndStartTracking(context, tripId, tripRepository)
             result.fold(
-                onSuccess = { trip -> startedAt = trip.startedAt },
+                onSuccess = { trip ->
+                    startedAt = trip.startedAt
+                    plannedArrivalAt = trip.calculatedArrivalAt
+                },
                 onFailure = {
                     errorMessage = "No se pudo cargar el viaje, no se inicio la grabacion."
                 },
@@ -119,24 +130,54 @@ fun ActiveTripScreen(
         } else {
             permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
+        // Load whatever stops exist right away (all unreached at trip
+        // start) rather than waiting a full poll cycle just to show their
+        // names — the loop below keeps them current from here on.
+        tripRepository.getStops(tripId).onSuccess { stops = it }
+    }
+
+    // Live loop while the trip is in progress: every POLL_INTERVAL_MS,
+    // upload whatever GPS points Room has recorded and not synced yet
+    // (same mechanism as the Sync-on-finish in endTrip() below, just
+    // running periodically instead of once), then refresh the live ETA and
+    // stop progress. Tied to this composable via LaunchedEffect — cancelled
+    // automatically once the trip ends and this screen leaves composition.
+    LaunchedEffect(tripId) {
+        while (true) {
+            delay(POLL_INTERVAL_MS)
+
+            val unsyncedPoints = gpsPointDao.getUnsyncedByTripId(tripId)
+            if (unsyncedPoints.isNotEmpty()) {
+                // Best-effort: a failed upload leaves these unsynced in
+                // Room, so the next tick retries them alongside whatever's
+                // been recorded since — no data is lost, just delayed.
+                tripRepository.uploadGpsPoints(tripId, unsyncedPoints).onSuccess {
+                    gpsPointDao.markSynced(unsyncedPoints.map { point -> point.id })
+                }
+            }
+
+            // Both best-effort too: a hiccup here just means the screen
+            // keeps showing the last value it had until the next tick.
+            tripRepository.recalculateEta(tripId).onSuccess { eta ->
+                liveArrivalAt = eta.calculatedArrivalAt
+            }
+            tripRepository.getStops(tripId).onSuccess { stops = it }
+        }
     }
 
     fun endTrip() {
         isEnding = true
         errorMessage = null
         scope.launch {
-            // Sync (Room -> API) happens here, right before finalizing:
+            // Sync (Room -> API) happens here too, right before finalizing:
             // /finalize computes distance/speed stats from whatever GPS
             // points already exist on the server, so without uploading
-            // first, those stats always come back null.
+            // first, those stats always come back null. The periodic sync
+            // above should have already caught most points, but this makes
+            // sure anything from the last partial interval isn't lost.
             val unsyncedPoints = gpsPointDao.getUnsyncedByTripId(tripId)
             if (unsyncedPoints.isNotEmpty()) {
                 val uploadResult = tripRepository.uploadGpsPoints(tripId, unsyncedPoints)
-                // Best-effort: if this fails (no connectivity right as the
-                // trip ends, etc.), the points stay unsynced in Room —
-                // finalize below just computes over whatever did make it
-                // up. No automatic retry yet; a future sync pass could
-                // pick these up later.
                 uploadResult.onSuccess {
                     gpsPointDao.markSynced(unsyncedPoints.map { point -> point.id })
                 }
@@ -179,7 +220,10 @@ fun ActiveTripScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = "14:47",
+                    // Falls back to the original plan until the first poll
+                    // tick comes back (recalculate-eta needs at least one
+                    // synced GPS point, which takes a moment after start).
+                    text = formatLocalTime(liveArrivalAt ?: plannedArrivalAt),
                     style = MaterialTheme.typography.headlineMedium,
                 )
             }
@@ -190,7 +234,7 @@ fun ActiveTripScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = "14:32",
+                    text = formatLocalTime(plannedArrivalAt),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.secondary,
                 )
@@ -217,30 +261,31 @@ fun ActiveTripScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
-                .padding(12.dp),
-        ) {
-            mockStops.forEachIndexed { index, stop ->
-                StopRow(stop = stop)
-                if (index != mockStops.lastIndex) {
-                    Spacer(modifier = Modifier.height(8.dp))
+        if (stops.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
+                    .padding(12.dp),
+            ) {
+                stops.forEachIndexed { index, stop ->
+                    StopRow(stop = stop.toTripStop())
+                    if (index != stops.lastIndex) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                 }
             }
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
         errorMessage?.let { message ->
-            Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
             )
+            Spacer(modifier = Modifier.height(16.dp))
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
 
         Button(
             onClick = { endTrip() },
@@ -307,6 +352,17 @@ private fun TripResponse.toEntity(syncedAt: String): TripEntity {
     )
 }
 
+// actual_arrival_at is set server-side once a synced GPS point lands within
+// 100m of the stop (trip-trace-api's stop_detection_service) — this is a
+// pure display mapping, no client-side proximity logic.
+private fun StopResponse.toTripStop(): TripStop {
+    return TripStop(
+        label = name ?: "Parada",
+        timeLabel = formatLocalTime(actualArrivalAt ?: plannedArrivalAt),
+        reached = actualArrivalAt != null,
+    )
+}
+
 @Composable
 private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
@@ -356,7 +412,9 @@ private fun StopRow(stop: TripStop) {
 }
 
 // Simplified placeholder for the real live map, which needs a maps SDK wired
-// up to the recorded GPS points.
+// up to the recorded GPS points — android#57 did this for History; the
+// same SDK could extend here in a future PR, but the live-updating aspect
+// (route so far vs. current position) is a separate scope from this one.
 @Composable
 private fun RouteMapPlaceholder() {
     Box(
