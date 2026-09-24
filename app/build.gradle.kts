@@ -1,4 +1,5 @@
 import java.util.Base64
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -22,6 +23,22 @@ if (debugKeystoreBase64.exists()) {
     debugKeystoreFile.writeBytes(Base64.getDecoder().decode(debugKeystoreBase64.readText().trim()))
 }
 
+// Maps API key — never hardcoded here. In CI it comes in as a Gradle
+// project property (-PMAPS_API_KEY=..., sourced from a GitHub Actions
+// secret); for local builds, from a MAPS_API_KEY line in local.properties
+// (already gitignored, standard Android practice). Falls back to an empty
+// string so a build without either still compiles — the map just won't
+// load without a real key.
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { load(it) }
+    }
+}
+val mapsApiKey: String = (project.findProperty("MAPS_API_KEY") as String?)
+    ?: localProperties.getProperty("MAPS_API_KEY")
+    ?: ""
+
 android {
     namespace = "com.techvibedev.triptrace"
     compileSdk = 35
@@ -32,6 +49,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        manifestPlaceholders["mapsApiKey"] = mapsApiKey
     }
 
     signingConfigs {
@@ -93,4 +112,28 @@ dependencies {
     implementation(libs.okhttp.logging.interceptor)
 
     implementation(libs.play.services.location)
+    implementation(libs.maps.compose)
+    // maps-compose 3.0.0 predates the version of the library that pulls
+    // this in transitively (a later release consolidated it) — needs to be
+    // declared explicitly here, matching what 3.0.0 itself was built/tested
+    // against.
+    implementation(libs.play.services.maps)
+}
+
+// maps-compose pulls in androidx.core:core-ktx/core transitively at a
+// version newer than ours (1.15.0) — that newer version requires a
+// compileSdk we're not on yet (android#21, deferred on purpose). We already
+// declare core-ktx 1.15.0 ourselves and it's confirmed compileSdk-35-safe
+// (per AndroidX's own release notes), so force every configuration to that
+// version rather than whatever maps-compose's own dependency graph asks
+// for. Narrower and more direct than hunting for an older maps-compose
+// release that happens to predate the bump — and keeps working regardless
+// of which maps-compose version we're on.
+configurations.all {
+    resolutionStrategy {
+        force(
+            "androidx.core:core-ktx:${libs.versions.coreKtx.get()}",
+            "androidx.core:core:${libs.versions.coreKtx.get()}",
+        )
+    }
 }

@@ -126,6 +126,16 @@ class TripRepository(
         }
     }
 
+    // Reads back a trip's synced GPS points — the real recorded path,
+    // as opposed to planned_route_polyline (Google's suggested route).
+    suspend fun getGpsPoints(tripId: String): Result<List<GpsPointResponse>> {
+        return try {
+            Result.success(apiService.listGpsPoints(authHeader(), tripId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     // Best-effort, same reasoning as calculateRoute: computes distance/speed
     // stats server-side from whatever points already made it up for this
     // trip. Call after uploadGpsPoints for real numbers — with no synced
