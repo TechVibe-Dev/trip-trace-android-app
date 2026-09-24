@@ -3,6 +3,8 @@ package com.techvibedev.triptrace.ui.screens.activetrip
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -41,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -50,6 +53,7 @@ import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberMarkerState
+import com.techvibedev.triptrace.R
 import com.techvibedev.triptrace.data.local.GpsPointDao
 import com.techvibedev.triptrace.data.local.TripEntity
 import com.techvibedev.triptrace.data.local.TripTraceDatabase
@@ -237,6 +241,7 @@ fun ActiveTripScreen(
         LiveRouteMap(
             tripId = tripId,
             gpsPointDao = gpsPointDao,
+            stops = stops,
             originLat = currentTrip?.originLat,
             originLng = currentTrip?.originLng,
             destinationLat = currentTrip?.destinationLat,
@@ -458,6 +463,21 @@ private fun StopRow(stop: TripStop) {
     }
 }
 
+// BitmapDescriptorFactory.fromResource() doesn't reliably rasterize vector
+// drawables (a long-standing platform limitation) — drawing it to a Bitmap
+// ourselves first is the standard workaround.
+private fun vectorToBitmapDescriptor(context: Context, drawableResId: Int): BitmapDescriptor {
+    val drawable = ContextCompat.getDrawable(context, drawableResId)!!
+    drawable.setBounds(0, 0, drawable.intrinsicWidth, drawable.intrinsicHeight)
+    val bitmap = Bitmap.createBitmap(
+        drawable.intrinsicWidth,
+        drawable.intrinsicHeight,
+        Bitmap.Config.ARGB_8888,
+    )
+    drawable.draw(Canvas(bitmap))
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
+}
+
 // Live map: current position + the route recorded so far, sourced straight
 // from Room (observeAllByTripId, ~every 10s as the tracking service
 // records) rather than the API — this needs to feel instant, not wait on
@@ -470,15 +490,20 @@ private fun StopRow(stop: TripStop) {
 private fun LiveRouteMap(
     tripId: String,
     gpsPointDao: GpsPointDao,
+    stops: List<StopResponse>,
     originLat: Double?,
     originLng: Double?,
     destinationLat: Double?,
     destinationLng: Double?,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val points by gpsPointDao.observeAllByTripId(tripId).collectAsState(initial = emptyList())
     val cameraPositionState = rememberCameraPositionState()
     var hasCenteredOnce by remember { mutableStateOf(false) }
+    // Waze/driving-mode style arrow instead of a generic pin for "where I
+    // am right now" — rotated below to match the latest recorded bearing.
+    val navArrowIcon = remember { vectorToBitmapDescriptor(context, R.drawable.ic_nav_arrow) }
 
     LaunchedEffect(points.size) {
         val latest = points.lastOrNull() ?: return@LaunchedEffect
@@ -509,6 +534,7 @@ private fun LiveRouteMap(
                 )
             }
         } else {
+            val latest = points.last()
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
@@ -521,9 +547,14 @@ private fun LiveRouteMap(
                     )
                 }
                 Marker(
-                    state = rememberMarkerState(
-                        position = LatLng(points.last().lat, points.last().lng),
-                    ),
+                    state = rememberMarkerState(position = LatLng(latest.lat, latest.lng)),
+                    icon = navArrowIcon,
+                    // GPS bearing is noisy/unreliable at low or zero speed
+                    // (a known limitation, not specific to this app) — null
+                    // falls back to pointing north rather than a stale or
+                    // jittery reading.
+                    rotation = latest.bearing?.toFloat() ?: 0f,
+                    flat = true,
                     title = "Posicion actual",
                 )
                 if (originLat != null && originLng != null) {
@@ -538,6 +569,13 @@ private fun LiveRouteMap(
                         state = rememberMarkerState(position = LatLng(destinationLat, destinationLng)),
                         icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE),
                         title = "Destino",
+                    )
+                }
+                stops.forEach { stop ->
+                    Marker(
+                        state = rememberMarkerState(position = LatLng(stop.lat, stop.lng)),
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_VIOLET),
+                        title = stop.name ?: "Parada",
                     )
                 }
             }
