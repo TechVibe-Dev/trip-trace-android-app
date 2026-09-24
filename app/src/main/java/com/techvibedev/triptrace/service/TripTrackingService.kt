@@ -9,6 +9,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -20,12 +24,14 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.techvibedev.triptrace.MainActivity
 import com.techvibedev.triptrace.data.local.GpsPointEntity
+import com.techvibedev.triptrace.data.local.SensorReadingEntity
 import com.techvibedev.triptrace.data.local.TripTraceDatabase
 import java.time.OffsetDateTime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // Foreground service that keeps recording GPS points to Room while a trip is
@@ -39,11 +45,53 @@ class TripTrackingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
+    private lateinit var sensorManager: SensorManager
+
+    // Which trip raw sensor readings belong to right now — read by
+    // sensorEventListener (registered once, in onCreate) rather than
+    // captured per-trip like locationCallback, since sensors don't need
+    // per-trip LocationRequest-style configuration and can just stay
+    // registered across trips, switching which tripId they tag.
+    private var activeTripId: String? = null
+    private val sensorReadingBuffer = mutableListOf<SensorReadingEntity>()
+    private val sensorReadingBufferLock = Any()
+
+    // Raw accelerometer/gyroscope samples, recorded purely to evaluate
+    // sensor fusion (android#76) for bridging GPS gaps — not used for
+    // anything in the app yet. Buffered in memory and flushed periodically
+    // (see startSensorFlushLoop) rather than inserted one row at a time,
+    // since these arrive far more often than GPS points.
+    private val sensorEventListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            val tripId = activeTripId ?: return
+            val type = when (event.sensor.type) {
+                Sensor.TYPE_ACCELEROMETER -> "ACCELEROMETER"
+                Sensor.TYPE_GYROSCOPE -> "GYROSCOPE"
+                else -> return
+            }
+            val reading = SensorReadingEntity(
+                tripId = tripId,
+                sensorType = type,
+                x = event.values[0],
+                y = event.values[1],
+                z = event.values[2],
+                recordedAt = OffsetDateTime.now().toString(),
+            )
+            synchronized(sensorReadingBufferLock) {
+                sensorReadingBuffer.add(reading)
+            }
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+    }
 
     override fun onCreate() {
         super.onCreate()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         createNotificationChannel()
+        registerSensorListeners()
+        startSensorFlushLoop()
     }
 
     @SuppressLint("MissingPermission")
@@ -53,6 +101,8 @@ class TripTrackingService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+
+        activeTripId = currentTripId
 
         // A started Service is reused across calls — Android does not spin
         // up a new instance just because start() was called again. Without
@@ -107,10 +157,36 @@ class TripTrackingService : Service() {
         if (::locationCallback.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         }
+        sensorManager.unregisterListener(sensorEventListener)
         serviceScope.cancel()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun registerSensorListeners() {
+        sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let { accelerometer ->
+            sensorManager.registerListener(sensorEventListener, accelerometer, SensorManager.SENSOR_DELAY_GAME)
+        }
+        sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let { gyroscope ->
+            sensorManager.registerListener(sensorEventListener, gyroscope, SensorManager.SENSOR_DELAY_GAME)
+        }
+    }
+
+    private fun startSensorFlushLoop() {
+        serviceScope.launch {
+            while (true) {
+                delay(SENSOR_FLUSH_INTERVAL_MS)
+                val toFlush = synchronized(sensorReadingBufferLock) {
+                    val copy = sensorReadingBuffer.toList()
+                    sensorReadingBuffer.clear()
+                    copy
+                }
+                if (toFlush.isNotEmpty()) {
+                    TripTraceDatabase.getInstance(applicationContext).sensorReadingDao().insertAll(toFlush)
+                }
+            }
+        }
+    }
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
@@ -144,8 +220,21 @@ class TripTrackingService : Service() {
         const val EXTRA_TRIP_ID = "extra_trip_id"
         private const val CHANNEL_ID = "trip_tracking_channel"
         private const val NOTIFICATION_ID = 1001
-        private const val LOCATION_INTERVAL_MS = 10_000L
-        private const val LOCATION_MIN_INTERVAL_MS = 5_000L
+        // Lowered from 10s/5s after a real driving test: the live map felt
+        // laggy (points, speed, and the route polyline all only updated
+        // every ~10s) and the polyline visibly cut corners between distant
+        // points instead of following the street. 3s/1.5s keeps roughly the
+        // same 2:1 ratio between requested and minimum interval, gives ~3x
+        // point density, and is still well within what Room/the 30s API
+        // sync comfortably handles for a normal trip length.
+        private const val LOCATION_INTERVAL_MS = 3_000L
+        private const val LOCATION_MIN_INTERVAL_MS = 1_500L
+        // SENSOR_DELAY_GAME (~20ms/50Hz) for the accelerometer/gyroscope
+        // themselves — fast enough to be useful for motion analysis, a
+        // standard rate for this kind of work. Buffered in memory and
+        // written to Room every 2s instead of per-sample, or we'd hit
+        // SQLite with ~100 individual inserts a second.
+        private const val SENSOR_FLUSH_INTERVAL_MS = 2_000L
 
         fun start(context: Context, tripId: String) {
             val intent = Intent(context, TripTrackingService::class.java).apply {
