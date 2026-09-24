@@ -106,7 +106,13 @@ fun ActiveTripScreen(
     val gpsPointDao = remember {
         TripTraceDatabase.getInstance(context.applicationContext).gpsPointDao()
     }
-    val latestPoint by gpsPointDao.observeLatest(tripId).collectAsState(initial = null)
+    // Skips points with a null speed reading (see GpsPointDao) rather than
+    // always using the single latest point — GPS speed drops out in short
+    // bursts (turns, braking, patchy sky visibility) even while position
+    // stays fine, confirmed across a real drive. Using the latest point
+    // unconditionally meant the card could flash "--" for a few seconds
+    // even with a real reading moments earlier.
+    val latestPointWithSpeed by gpsPointDao.observeLatestWithSpeed(tripId).collectAsState(initial = null)
 
     var trip by remember { mutableStateOf<TripResponse?>(null) }
     var liveArrivalAt by remember { mutableStateOf<String?>(null) }
@@ -303,7 +309,7 @@ fun ActiveTripScreen(
                 ) {
                     StatCard(
                         label = "Velocidad",
-                        value = formatSpeed(latestPoint?.speed),
+                        value = formatSpeed(latestPointWithSpeed?.speed),
                         modifier = Modifier.weight(1f),
                     )
                     StatCard(
