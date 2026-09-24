@@ -7,6 +7,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Fixed the live map's current-position marker staying frozen at the trip's origin during a real drive — `rememberMarkerState` only sets position on first creation, later updates were silently ignored. Lowered the GPS recording interval 10s/5s → 3s/1.5s, improving both update lag and how closely the recorded route polyline follows the actual street. Fixed the speed card flashing "--" mid-drive: GPS speed drops out in short bursts (turns, braking, patchy sky) even while position stays fine — the card now shows the latest reading that actually has a speed, instead of always the single latest point. All three found during the first real driving test. ([#75](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/75))
+
 ## [0.3.0] - 24 Sep 2026
 
 - Active trip screen now polls every 30s: syncs unsynced GPS points (Room → API), refreshes the live ETA (`POST /trips/{id}/recalculate-eta`) and stop progress (`GET /trips/{id}/stops`, `actual_arrival_at` detected server-side). Replaces the remaining mock data on this screen. Best-effort throughout — a failed tick just retries on the next one. ([#66](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/66))

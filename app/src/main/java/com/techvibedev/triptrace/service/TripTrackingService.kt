@@ -144,8 +144,8 @@ class TripTrackingService : Service() {
         const val EXTRA_TRIP_ID = "extra_trip_id"
         private const val CHANNEL_ID = "trip_tracking_channel"
         private const val NOTIFICATION_ID = 1001
-        private const val LOCATION_INTERVAL_MS = 10_000L
-        private const val LOCATION_MIN_INTERVAL_MS = 5_000L
+        private const val LOCATION_INTERVAL_MS = 3_000L
+        private const val LOCATION_MIN_INTERVAL_MS = 1_500L
 
         fun start(context: Context, tripId: String) {
             val intent = Intent(context, TripTrackingService::class.java).apply {
