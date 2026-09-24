@@ -7,6 +7,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Now records raw accelerometer/gyroscope samples alongside GPS points (new `sensor_readings` table, ~50Hz, buffered and flushed every 2s) — local-only, not synced to the API, not used anywhere in the app yet. First step toward evaluating sensor fusion (`android#76`) to improve position/speed accuracy during GPS signal gaps. ([#77](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/77))
+
 ## [0.3.0] - 24 Sep 2026
 
 - Active trip screen now polls every 30s: syncs unsynced GPS points (Room → API), refreshes the live ETA (`POST /trips/{id}/recalculate-eta`) and stop progress (`GET /trips/{id}/stops`, `actual_arrival_at` detected server-side). Replaces the remaining mock data on this screen. Best-effort throughout — a failed tick just retries on the next one. ([#66](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/66))
