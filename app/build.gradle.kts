@@ -113,6 +113,11 @@ dependencies {
 
     implementation(libs.play.services.location)
     implementation(libs.maps.compose)
+    // maps-compose 3.0.0 predates the version of the library that pulls
+    // this in transitively (a later release consolidated it) — needs to be
+    // declared explicitly here, matching what 3.0.0 itself was built/tested
+    // against.
+    implementation(libs.play.services.maps)
 }
 
 // maps-compose pulls in androidx.core:core-ktx/core transitively at a
