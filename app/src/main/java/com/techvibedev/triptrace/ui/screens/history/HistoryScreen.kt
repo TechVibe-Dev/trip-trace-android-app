@@ -34,16 +34,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
+import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberMarkerState
+import com.techvibedev.triptrace.R
 import com.techvibedev.triptrace.data.model.GpsPointResponse
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
@@ -217,6 +221,14 @@ private fun RealRouteMap(tripId: String, tripRepository: TripRepository) {
     var points by remember(tripId) { mutableStateOf<List<GpsPointResponse>>(emptyList()) }
     var isLoading by remember(tripId) { mutableStateOf(true) }
     var loadError by remember(tripId) { mutableStateOf(false) }
+    val context = LocalContext.current
+    // Dark map style (android#68) — Google's default palette is light and
+    // clashes with the rest of the (dark-themed) app. Remembered so the
+    // same MapStyleOptions instance survives recomposition rather than
+    // re-parsing the raw resource every time.
+    val mapProperties = remember {
+        MapProperties(mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark))
+    }
 
     LaunchedEffect(tripId) {
         val result = tripRepository.getGpsPoints(tripId)
@@ -260,6 +272,7 @@ private fun RealRouteMap(tripId: String, tripRepository: TripRepository) {
                 GoogleMap(
                     modifier = Modifier.fillMaxSize(),
                     cameraPositionState = cameraPositionState,
+                    properties = mapProperties,
                     uiSettings = MapUiSettings(
                         zoomControlsEnabled = false,
                         scrollGesturesEnabled = false,

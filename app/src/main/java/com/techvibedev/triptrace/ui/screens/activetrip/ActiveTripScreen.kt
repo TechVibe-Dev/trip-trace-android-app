@@ -47,7 +47,9 @@ import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.Polyline
@@ -501,6 +503,14 @@ private fun LiveRouteMap(
     val points by gpsPointDao.observeAllByTripId(tripId).collectAsState(initial = emptyList())
     val cameraPositionState = rememberCameraPositionState()
     var hasCenteredOnce by remember { mutableStateOf(false) }
+    // Dark map style (android#68) — Google's default palette is light and
+    // clashes with the rest of the (dark-themed) app. loadRawResourceStyle
+    // just parses JSON, no dependency on the Maps system being initialized
+    // (unlike BitmapDescriptorFactory below), so this is safe to build
+    // unconditionally here.
+    val mapProperties = remember {
+        MapProperties(mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark))
+    }
 
     LaunchedEffect(points.size) {
         val latest = points.lastOrNull() ?: return@LaunchedEffect
@@ -545,6 +555,7 @@ private fun LiveRouteMap(
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
+                properties = mapProperties,
                 uiSettings = MapUiSettings(zoomControlsEnabled = false),
             ) {
                 if (points.size >= 2) {
