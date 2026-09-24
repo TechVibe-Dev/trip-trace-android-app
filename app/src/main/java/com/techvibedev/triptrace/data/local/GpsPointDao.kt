@@ -29,6 +29,21 @@ interface GpsPointDao {
     @Query("SELECT * FROM gps_points WHERE tripId = :tripId ORDER BY recordedAt DESC LIMIT 1")
     fun observeLatest(tripId: String): Flow<GpsPointEntity?>
 
+    // Speed can be legitimately absent on any given fix — GPS speed comes
+    // from Doppler shift on the satellite signal, which needs a sustained
+    // clean read; it drops out in short bursts during turns, braking, or
+    // patchy sky visibility, even while position stays fine. Confirmed
+    // across a real drive: bursts of a handful of consecutive null-speed
+    // points, interspersed with good ones. observeLatest alone would show
+    // "--" if the very last point happened to land in one of those bursts,
+    // even with a real reading a couple of points earlier — this query
+    // skips nulls so the speed shown is always the most recent real one.
+    @Query(
+        "SELECT * FROM gps_points WHERE tripId = :tripId AND speed IS NOT NULL " +
+            "ORDER BY recordedAt DESC LIMIT 1",
+    )
+    fun observeLatestWithSpeed(tripId: String): Flow<GpsPointEntity?>
+
     // Same live-update reasoning as observeLatest, but the whole recorded
     // path — for drawing the route-so-far on the live map, sourced straight
     // from Room (recorded every ~10s) rather than the 30s API sync, which
