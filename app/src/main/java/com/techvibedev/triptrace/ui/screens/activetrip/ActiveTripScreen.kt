@@ -35,9 +35,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.compose.rememberMarkerState
+import com.techvibedev.triptrace.data.local.GpsPointDao
 import com.techvibedev.triptrace.data.local.TripEntity
 import com.techvibedev.triptrace.data.local.TripTraceDatabase
 import com.techvibedev.triptrace.data.model.StopResponse
@@ -205,7 +216,7 @@ fun ActiveTripScreen(
             .fillMaxSize()
             .padding(16.dp),
     ) {
-        RouteMapPlaceholder()
+        LiveRouteMap(tripId = tripId, gpsPointDao = gpsPointDao)
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -411,24 +422,70 @@ private fun StopRow(stop: TripStop) {
     }
 }
 
-// Simplified placeholder for the real live map, which needs a maps SDK wired
-// up to the recorded GPS points — android#57 did this for History; the
-// same SDK could extend here in a future PR, but the live-updating aspect
-// (route so far vs. current position) is a separate scope from this one.
+// Live map: current position + the route recorded so far, sourced straight
+// from Room (observeAllByTripId, ~every 10s as the tracking service
+// records) rather than the API — this needs to feel instant, not wait on
+// the 30s sync cycle above, which exists to get data to the server, not to
+// redraw the phone's own map. Camera follows the latest position, like a
+// navigation app, rather than staying fixed on the initial fit.
 @Composable
-private fun RouteMapPlaceholder() {
+private fun LiveRouteMap(tripId: String, gpsPointDao: GpsPointDao) {
+    val points by gpsPointDao.observeAllByTripId(tripId).collectAsState(initial = emptyList())
+    val cameraPositionState = rememberCameraPositionState()
+    var hasCenteredOnce by remember { mutableStateOf(false) }
+
+    LaunchedEffect(points.size) {
+        val latest = points.lastOrNull() ?: return@LaunchedEffect
+        val latLng = LatLng(latest.lat, latest.lng)
+        if (!hasCenteredOnce) {
+            // First point: jump straight there — animating from the map's
+            // arbitrary default start position would be a pointless pan
+            // across the globe.
+            cameraPositionState.position = CameraPosition.fromLatLngZoom(latLng, 17f)
+            hasCenteredOnce = true
+        } else {
+            cameraPositionState.animate(CameraUpdateFactory.newLatLng(latLng), durationMs = 1000)
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(170.dp)
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp)),
-        contentAlignment = Alignment.Center,
+            .height(200.dp)
+            .clip(RoundedCornerShape(16.dp)),
     ) {
-        Text(
-            text = "Mapa en vivo",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (points.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Esperando ubicacion...",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState,
+                uiSettings = MapUiSettings(zoomControlsEnabled = false),
+            ) {
+                if (points.size >= 2) {
+                    Polyline(
+                        points = points.map { LatLng(it.lat, it.lng) },
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Marker(
+                    state = rememberMarkerState(
+                        position = LatLng(points.last().lat, points.last().lng),
+                    ),
+                )
+            }
+        }
     }
 }
 
