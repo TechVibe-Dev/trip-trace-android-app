@@ -28,4 +28,11 @@ interface GpsPointDao {
     // this table.
     @Query("SELECT * FROM gps_points WHERE tripId = :tripId ORDER BY recordedAt DESC LIMIT 1")
     fun observeLatest(tripId: String): Flow<GpsPointEntity?>
+
+    // Same live-update reasoning as observeLatest, but the whole recorded
+    // path — for drawing the route-so-far on the live map, sourced straight
+    // from Room (recorded every ~10s) rather than the 30s API sync, which
+    // exists to get data to the server, not to redraw the phone's own map.
+    @Query("SELECT * FROM gps_points WHERE tripId = :tripId ORDER BY recordedAt")
+    fun observeAllByTripId(tripId: String): Flow<List<GpsPointEntity>>
 }

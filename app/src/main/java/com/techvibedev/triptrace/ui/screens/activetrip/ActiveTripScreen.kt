@@ -3,6 +3,8 @@ package com.techvibedev.triptrace.ui.screens.activetrip
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -35,9 +37,24 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptor
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.compose.rememberMarkerState
+import com.techvibedev.triptrace.R
+import com.techvibedev.triptrace.data.local.GpsPointDao
 import com.techvibedev.triptrace.data.local.TripEntity
 import com.techvibedev.triptrace.data.local.TripTraceDatabase
 import com.techvibedev.triptrace.data.model.StopResponse
@@ -69,6 +86,13 @@ private const val MS_TO_KMH = 3.6
 // device's radio/battery. Matches the interval agreed on with api#7.
 private const val POLL_INTERVAL_MS = 30_000L
 
+// Floating cards sit on top of a full-screen map (agreed design: the map is
+// the protagonist of this screen) — a flat surface color would be
+// unreadable against arbitrary map tiles underneath, so every card uses
+// this translucent version instead.
+private val OverlayCardColor: Color
+    @Composable get() = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+
 @Composable
 fun ActiveTripScreen(
     tripId: String,
@@ -81,8 +105,7 @@ fun ActiveTripScreen(
     }
     val latestPoint by gpsPointDao.observeLatest(tripId).collectAsState(initial = null)
 
-    var startedAt by remember { mutableStateOf<String?>(null) }
-    var plannedArrivalAt by remember { mutableStateOf<String?>(null) }
+    var trip by remember { mutableStateOf<TripResponse?>(null) }
     var liveArrivalAt by remember { mutableStateOf<String?>(null) }
     var stops by remember { mutableStateOf<List<StopResponse>>(emptyList()) }
     var isEnding by remember { mutableStateOf(false) }
@@ -96,10 +119,7 @@ fun ActiveTripScreen(
             scope.launch {
                 val result = ensureTripSavedLocallyAndStartTracking(context, tripId, tripRepository)
                 result.fold(
-                    onSuccess = { trip ->
-                        startedAt = trip.startedAt
-                        plannedArrivalAt = trip.calculatedArrivalAt
-                    },
+                    onSuccess = { trip = it },
                     onFailure = {
                         errorMessage = "No se pudo cargar el viaje, no se inicio la grabacion."
                     },
@@ -119,10 +139,7 @@ fun ActiveTripScreen(
         if (hasPermission) {
             val result = ensureTripSavedLocallyAndStartTracking(context, tripId, tripRepository)
             result.fold(
-                onSuccess = { trip ->
-                    startedAt = trip.startedAt
-                    plannedArrivalAt = trip.calculatedArrivalAt
-                },
+                onSuccess = { trip = it },
                 onFailure = {
                     errorMessage = "No se pudo cargar el viaje, no se inicio la grabacion."
                 },
@@ -200,106 +217,141 @@ fun ActiveTripScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-    ) {
-        RouteMapPlaceholder()
+    // Stops + destination, always shown together — the destination is
+    // always the last row (never "reached" while still in progress; the
+    // trip only knows it arrived once the user taps "Finalizar viaje", no
+    // proximity detection for the destination itself, unlike intermediate
+    // stops). Real intermediate stops come first, in the order the trip
+    // has them.
+    val currentTrip = trip
+    val displayRows = buildList {
+        addAll(stops.map { it.toTripStop() })
+        if (currentTrip != null) {
+            add(
+                TripStop(
+                    label = "Destino: ${currentTrip.destinationName}",
+                    timeLabel = formatLocalTime(liveArrivalAt ?: currentTrip.calculatedArrivalAt),
+                    reached = false,
+                ),
+            )
+        }
+    }
 
-        Spacer(modifier = Modifier.height(16.dp))
+    Box(modifier = Modifier.fillMaxSize()) {
+        LiveRouteMap(
+            tripId = tripId,
+            gpsPointDao = gpsPointDao,
+            stops = stops,
+            originLat = currentTrip?.originLat,
+            originLng = currentTrip?.originLng,
+            destinationLat = currentTrip?.destinationLat,
+            destinationLng = currentTrip?.destinationLng,
+            modifier = Modifier.fillMaxSize(),
+        )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Column {
-                Text(
-                    text = "Llegada estimada",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    // Falls back to the original plan until the first poll
-                    // tick comes back (recalculate-eta needs at least one
-                    // synced GPS point, which takes a moment after start).
-                    text = formatLocalTime(liveArrivalAt ?: plannedArrivalAt),
-                    style = MaterialTheme.typography.headlineMedium,
-                )
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "Planeado",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = formatLocalTime(plannedArrivalAt),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            StatCard(
-                label = "Velocidad",
-                value = formatSpeed(latestPoint?.speed),
-                modifier = Modifier.weight(1f),
-            )
-            StatCard(
-                label = "Salida",
-                value = formatLocalTime(startedAt),
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (stops.isNotEmpty()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
-                    .padding(12.dp),
-            ) {
-                stops.forEachIndexed { index, stop ->
-                    StopRow(stop = stop.toTripStop())
-                    if (index != stops.lastIndex) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(OverlayCardColor, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column {
+                        Text(
+                            text = "Llegada estimada",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            // Falls back to the original plan until the
+                            // first poll tick comes back (recalculate-eta
+                            // needs at least one synced GPS point, which
+                            // takes a moment after start).
+                            text = formatLocalTime(liveArrivalAt ?: currentTrip?.calculatedArrivalAt),
+                            style = MaterialTheme.typography.headlineMedium,
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "Planeado",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = formatLocalTime(currentTrip?.calculatedArrivalAt),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    StatCard(
+                        label = "Velocidad",
+                        value = formatSpeed(latestPoint?.speed),
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatCard(
+                        label = "Salida",
+                        value = formatLocalTime(currentTrip?.startedAt),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
 
-        errorMessage?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-        }
+            Column {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(OverlayCardColor, RoundedCornerShape(10.dp))
+                        .padding(12.dp),
+                ) {
+                    displayRows.forEachIndexed { index, stop ->
+                        StopRow(stop = stop)
+                        if (index != displayRows.lastIndex) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                }
 
-        Button(
-            onClick = { endTrip() },
-            enabled = !isEnding,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            if (isEnding) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    strokeWidth = 2.dp,
-                )
-            } else {
-                Text("Finalizar viaje")
+                errorMessage?.let { message ->
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = { endTrip() },
+                    enabled = !isEnding,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (isEnding) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Text("Finalizar viaje")
+                    }
+                }
             }
         }
     }
@@ -367,7 +419,7 @@ private fun StopResponse.toTripStop(): TripStop {
 private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
+            .background(OverlayCardColor, RoundedCornerShape(10.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Text(
@@ -411,24 +463,130 @@ private fun StopRow(stop: TripStop) {
     }
 }
 
-// Simplified placeholder for the real live map, which needs a maps SDK wired
-// up to the recorded GPS points — android#57 did this for History; the
-// same SDK could extend here in a future PR, but the live-updating aspect
-// (route so far vs. current position) is a separate scope from this one.
+// BitmapDescriptorFactory.fromResource() doesn't reliably rasterize vector
+// drawables (a long-standing platform limitation) — drawing it to a Bitmap
+// ourselves first is the standard workaround.
+private fun vectorToBitmapDescriptor(context: Context, drawableResId: Int): BitmapDescriptor {
+    val drawable = ContextCompat.getDrawable(context, drawableResId)!!
+    drawable.setBounds(0, 0, drawable.intrinsicWidth, drawable.intrinsicHeight)
+    val bitmap = Bitmap.createBitmap(
+        drawable.intrinsicWidth,
+        drawable.intrinsicHeight,
+        Bitmap.Config.ARGB_8888,
+    )
+    drawable.draw(Canvas(bitmap))
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
+}
+
+// Live map: current position + the route recorded so far, sourced straight
+// from Room (observeAllByTripId, ~every 10s as the tracking service
+// records) rather than the API — this needs to feel instant, not wait on
+// the 30s sync cycle above, which exists to get data to the server, not to
+// redraw the phone's own map. Camera follows the latest position, like a
+// navigation app, rather than staying fixed on the initial fit. Fills the
+// whole screen (agreed design) — the overlay cards in the parent Box sit on
+// top of this, not beside it.
 @Composable
-private fun RouteMapPlaceholder() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(170.dp)
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "Mapa en vivo",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+private fun LiveRouteMap(
+    tripId: String,
+    gpsPointDao: GpsPointDao,
+    stops: List<StopResponse>,
+    originLat: Double?,
+    originLng: Double?,
+    destinationLat: Double?,
+    destinationLng: Double?,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val points by gpsPointDao.observeAllByTripId(tripId).collectAsState(initial = emptyList())
+    val cameraPositionState = rememberCameraPositionState()
+    var hasCenteredOnce by remember { mutableStateOf(false) }
+
+    LaunchedEffect(points.size) {
+        val latest = points.lastOrNull() ?: return@LaunchedEffect
+        val latLng = LatLng(latest.lat, latest.lng)
+        if (!hasCenteredOnce) {
+            // First point: jump straight there — animating from the map's
+            // arbitrary default start position would be a pointless pan
+            // across the globe.
+            cameraPositionState.position = CameraPosition.fromLatLngZoom(latLng, 16f)
+            hasCenteredOnce = true
+        } else {
+            cameraPositionState.animate(CameraUpdateFactory.newLatLng(latLng), durationMs = 1000)
+        }
+    }
+
+    Box(modifier = modifier.clip(RoundedCornerShape(0.dp))) {
+        if (points.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Esperando ubicacion...",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            // Computed here, not above the points.isEmpty() check — this is
+            // the first point in composition where a GoogleMap is actually
+            // about to exist. BitmapDescriptorFactory throws
+            // IllegalStateException if called before the Maps system has
+            // been initialized (normally triggered by creating a map), so
+            // building this any earlier — e.g. unconditionally at the top
+            // of this function, which used to crash "Iniciar viaje" every
+            // time, since the very first composition always has zero
+            // points recorded yet — is not safe.
+            val navArrowIcon = remember { vectorToBitmapDescriptor(context, R.drawable.ic_nav_arrow) }
+            val latest = points.last()
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState,
+                uiSettings = MapUiSettings(zoomControlsEnabled = false),
+            ) {
+                if (points.size >= 2) {
+                    Polyline(
+                        points = points.map { LatLng(it.lat, it.lng) },
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Marker(
+                    state = rememberMarkerState(position = LatLng(latest.lat, latest.lng)),
+                    icon = navArrowIcon,
+                    // GPS bearing is noisy/unreliable at low or zero speed
+                    // (a known limitation, not specific to this app) — null
+                    // falls back to pointing north rather than a stale or
+                    // jittery reading.
+                    rotation = latest.bearing?.toFloat() ?: 0f,
+                    flat = true,
+                    title = "Posicion actual",
+                )
+                if (originLat != null && originLng != null) {
+                    Marker(
+                        state = rememberMarkerState(position = LatLng(originLat, originLng)),
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN),
+                        title = "Origen",
+                    )
+                }
+                if (destinationLat != null && destinationLng != null) {
+                    Marker(
+                        state = rememberMarkerState(position = LatLng(destinationLat, destinationLng)),
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE),
+                        title = "Destino",
+                    )
+                }
+                stops.forEach { stop ->
+                    Marker(
+                        state = rememberMarkerState(position = LatLng(stop.lat, stop.lng)),
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_VIOLET),
+                        title = stop.name ?: "Parada",
+                    )
+                }
+            }
+        }
     }
 }
 
