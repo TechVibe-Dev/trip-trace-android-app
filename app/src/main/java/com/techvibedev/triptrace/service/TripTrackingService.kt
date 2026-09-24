@@ -229,11 +229,6 @@ class TripTrackingService : Service() {
         // sync comfortably handles for a normal trip length.
         private const val LOCATION_INTERVAL_MS = 3_000L
         private const val LOCATION_MIN_INTERVAL_MS = 1_500L
-        // SENSOR_DELAY_GAME (~20ms/50Hz) for the accelerometer/gyroscope
-        // themselves — fast enough to be useful for motion analysis, a
-        // standard rate for this kind of work. Buffered in memory and
-        // written to Room every 2s instead of per-sample, or we'd hit
-        // SQLite with ~100 individual inserts a second.
         private const val SENSOR_FLUSH_INTERVAL_MS = 2_000L
 
         fun start(context: Context, tripId: String) {

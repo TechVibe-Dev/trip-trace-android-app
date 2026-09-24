@@ -8,6 +8,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 - Now records raw accelerometer/gyroscope samples alongside GPS points (new `sensor_readings` table, ~50Hz, buffered and flushed every 2s) — local-only, not synced to the API, not used anywhere in the app yet. First step toward evaluating sensor fusion (`android#76`) to improve position/speed accuracy during GPS signal gaps. ([#77](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/77))
+- Fixed the live map's current-position marker staying frozen at the trip's origin during a real drive — `rememberMarkerState` only sets position on first creation, later updates were silently ignored. Lowered the GPS recording interval 10s/5s → 3s/1.5s, improving both update lag and how closely the recorded route polyline follows the actual street. Fixed the speed card flashing "--" mid-drive: GPS speed drops out in short bursts (turns, braking, patchy sky) even while position stays fine — the card now shows the latest reading that actually has a speed, instead of always the single latest point. All three found during the first real driving test. ([#75](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/75))
 
 ## [0.3.0] - 24 Sep 2026
 
