@@ -55,6 +55,12 @@ interface TripApiService {
         @Body points: List<GpsPointCreateRequest>,
     ): List<GpsPointResponse>
 
+    @GET("api/v1/trips/{tripId}/gps-points")
+    suspend fun listGpsPoints(
+        @Header("Authorization") bearerToken: String,
+        @Path("tripId") tripId: String,
+    ): List<GpsPointResponse>
+
     @POST("api/v1/trips/{tripId}/finalize")
     suspend fun finalizeTrip(
         @Header("Authorization") bearerToken: String,
