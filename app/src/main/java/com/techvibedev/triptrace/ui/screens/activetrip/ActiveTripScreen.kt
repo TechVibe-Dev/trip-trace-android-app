@@ -217,6 +217,19 @@ fun ActiveTripScreen(
                 tripRepository.finalizeTrip(tripId)
             }
 
+            // Local cleanup: once every point for this trip is confirmed
+            // synced (whether it already was, or just got uploaded above),
+            // Room's copy has served its purpose — History and the web
+            // frontend both read from the API, never from here. Leaves
+            // TripEntity itself in place (see GpsPointDao.deleteByTripId)
+            // so sensor_readings, a separate FK child of it kept for
+            // manual review (see HistoryScreen), isn't swept up too. If the
+            // upload failed and some points are still unsynced, nothing is
+            // deleted — same retry-later posture as the rest of Sync.
+            if (gpsPointDao.getUnsyncedByTripId(tripId).isEmpty()) {
+                gpsPointDao.deleteByTripId(tripId)
+            }
+
             TripTrackingService.stop(context)
             isEnding = false
             endResult.fold(
