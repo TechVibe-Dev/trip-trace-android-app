@@ -23,6 +23,16 @@ interface GpsPointDao {
     @Query("UPDATE gps_points SET synced = 1 WHERE id IN (:ids)")
     suspend fun markSynced(ids: List<Long>)
 
+    // Called once a trip's points are all confirmed synced (see endTrip()
+    // in ActiveTripScreen) — the API is the source of truth for everything
+    // that reads trip data back (History, the web frontend), so keeping
+    // synced points in Room forever serves no purpose, just uses space.
+    // Deletes only the points themselves, not the trip's own Room row —
+    // TripEntity stays (see TripDao, and why: it's the FK parent of
+    // sensor_readings too, which must NOT be swept up by this cleanup).
+    @Query("DELETE FROM gps_points WHERE tripId = :tripId")
+    suspend fun deleteByTripId(tripId: String)
+
     // Flow so ActiveTripScreen updates live as the tracking service inserts
     // new points, without polling — Room emits automatically on writes to
     // this table.
@@ -46,8 +56,8 @@ interface GpsPointDao {
 
     // Same live-update reasoning as observeLatest, but the whole recorded
     // path — for drawing the route-so-far on the live map, sourced straight
-    // from Room (recorded every ~10s) rather than the 30s API sync, which
-    // exists to get data to the server, not to redraw the phone's own map.
+    // from Room (recorded every ~3s) rather than the API, which exists to
+    // get data to the server, not to redraw the phone's own map.
     @Query("SELECT * FROM gps_points WHERE tripId = :tripId ORDER BY recordedAt")
     fun observeAllByTripId(tripId: String): Flow<List<GpsPointEntity>>
 }
