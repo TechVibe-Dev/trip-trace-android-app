@@ -1,5 +1,6 @@
 package com.techvibedev.triptrace.ui.screens.history
 
+import androidx.compose.foundation.layout.width;
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
