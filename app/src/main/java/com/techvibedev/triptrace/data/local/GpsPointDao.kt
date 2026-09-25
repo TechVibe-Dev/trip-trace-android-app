@@ -23,6 +23,16 @@ interface GpsPointDao {
     @Query("UPDATE gps_points SET synced = 1 WHERE id IN (:ids)")
     suspend fun markSynced(ids: List<Long>)
 
+    // Called once a trip's points are all confirmed synced (see endTrip()
+    // in ActiveTripScreen) — the API is the source of truth for everything
+    // that reads trip data back (History, the web frontend), so keeping
+    // synced points in Room forever serves no purpose, just uses space.
+    // Deletes only the points themselves, not the trip's own Room row —
+    // TripEntity stays (see TripDao, and why: it's the FK parent of
+    // sensor_readings too, which must NOT be swept up by this cleanup).
+    @Query("DELETE FROM gps_points WHERE tripId = :tripId")
+    suspend fun deleteByTripId(tripId: String)
+
     // Flow so ActiveTripScreen updates live as the tracking service inserts
     // new points, without polling — Room emits automatically on writes to
     // this table.
