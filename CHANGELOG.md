@@ -7,6 +7,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Local storage cleanup: GPS points now delete automatically from Room once confirmed synced to the API (History/the web frontend always read from there, never from Room — keeping synced points locally served no purpose). Sensor readings (see below) are never auto-deleted, since their only purpose is manual review — added a per-trip "Borrar datos de sensores" control (with confirmation) to History's expanded card instead. ([#79](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/79))
+- Now records raw accelerometer/gyroscope samples alongside GPS points (new `sensor_readings` table, ~50Hz nominal — real-world rate can run higher depending on the device, buffered and flushed every 2s) — local-only, not synced to the API. First step toward evaluating sensor fusion (`android#76`) to improve position/speed accuracy during GPS signal gaps. ([#77](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/77))
 - Fixed the live map's current-position marker staying frozen at the trip's origin during a real drive — `rememberMarkerState` only sets position on first creation, later updates were silently ignored. Lowered the GPS recording interval 10s/5s → 3s/1.5s, improving both update lag and how closely the recorded route polyline follows the actual street. Fixed the speed card flashing "--" mid-drive: GPS speed drops out in short bursts (turns, braking, patchy sky) even while position stays fine — the card now shows the latest reading that actually has a speed, instead of always the single latest point. All three found during the first real driving test. ([#75](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/75))
 
 ## [0.3.0] - 24 Sep 2026
