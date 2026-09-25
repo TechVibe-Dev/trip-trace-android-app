@@ -4,6 +4,7 @@ import com.techvibedev.triptrace.data.local.GpsPointEntity
 import com.techvibedev.triptrace.data.model.EtaRecalculationResponse
 import com.techvibedev.triptrace.data.model.GpsPointCreateRequest
 import com.techvibedev.triptrace.data.model.GpsPointResponse
+import com.techvibedev.triptrace.data.model.SegmentResponse
 import com.techvibedev.triptrace.data.model.StopCreateRequest
 import com.techvibedev.triptrace.data.model.StopResponse
 import com.techvibedev.triptrace.data.model.TripCreateRequest
@@ -175,6 +176,16 @@ class TripRepository(
     suspend fun getStops(tripId: String): Result<List<StopResponse>> {
         return try {
             Result.success(apiService.listStops(authHeader(), tripId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // SLOW/NORMAL/FAST stretches of a completed trip — same data the web
+    // frontend uses to color its route map (trip-trace-frontend#6).
+    suspend fun getSegments(tripId: String): Result<List<SegmentResponse>> {
+        return try {
+            Result.success(apiService.listSegments(authHeader(), tripId))
         } catch (e: Exception) {
             Result.failure(e)
         }
