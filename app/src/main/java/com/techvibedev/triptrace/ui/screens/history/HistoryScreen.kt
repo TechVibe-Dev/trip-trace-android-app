@@ -17,19 +17,25 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +54,7 @@ import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberMarkerState
 import com.techvibedev.triptrace.R
+import com.techvibedev.triptrace.data.local.TripTraceDatabase
 import com.techvibedev.triptrace.data.model.GpsPointResponse
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
@@ -55,6 +62,7 @@ import java.time.Duration
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.launch
 
 @Composable
 fun HistoryScreen(tripRepository: TripRepository) {
@@ -175,6 +183,8 @@ private fun PastTripCard(
                     TripStat(label = "Promedio", value = formatSpeed(trip.avgSpeed))
                     TripStat(label = "Distancia", value = formatDistance(trip.distanceKm))
                 }
+                Spacer(modifier = Modifier.height(10.dp))
+                SensorDataCleanupRow(tripId = trip.id)
             } else {
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -205,6 +215,82 @@ private fun TripStat(label: String, value: String) {
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+// Manual, user-triggered cleanup for this trip's raw accelerometer/
+// gyroscope samples (android#76's evaluation data) — unlike gps_points,
+// nothing ever auto-deletes these, since their whole purpose is being
+// available for review/extraction after the fact. Only shown once a count
+// is loaded and it's above zero, so trips with no sensor data (recorded
+// before that PR, or already cleared) don't show an empty/dead control.
+@Composable
+private fun SensorDataCleanupRow(tripId: String) {
+    val context = LocalContext.current
+    val sensorReadingDao = remember {
+        TripTraceDatabase.getInstance(context.applicationContext).sensorReadingDao()
+    }
+    val scope = rememberCoroutineScope()
+    var readingCount by remember(tripId) { mutableIntStateOf(0) }
+    var showConfirmDialog by remember(tripId) { mutableStateOf(false) }
+    var isDeleting by remember(tripId) { mutableStateOf(false) }
+
+    LaunchedEffect(tripId) {
+        readingCount = sensorReadingDao.countByTripId(tripId)
+    }
+
+    if (readingCount > 0) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Datos de sensores: $readingCount registros",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            IconButton(onClick = { showConfirmDialog = true }, enabled = !isDeleting) {
+                Icon(
+                    imageVector = Icons.Filled.DeleteOutline,
+                    contentDescription = "Borrar datos de sensores de este viaje",
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+
+    if (showConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmDialog = false },
+            title = { Text("Borrar datos de sensores") },
+            text = {
+                Text(
+                    "Se van a borrar los $readingCount registros de acelerometro/giroscopio " +
+                        "grabados para este viaje. No se puede deshacer.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showConfirmDialog = false
+                        isDeleting = true
+                        scope.launch {
+                            sensorReadingDao.deleteByTripId(tripId)
+                            readingCount = 0
+                            isDeleting = false
+                        }
+                    },
+                ) {
+                    Text("Borrar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmDialog = false }) {
+                    Text("Cancelar")
+                }
+            },
         )
     }
 }
