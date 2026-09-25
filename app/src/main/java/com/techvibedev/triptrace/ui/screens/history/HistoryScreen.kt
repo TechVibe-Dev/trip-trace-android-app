@@ -434,16 +434,16 @@ private fun RealRouteMap(tripId: String, tripRepository: TripRepository) {
                         modifier = Modifier.fillMaxSize(),
                         cameraPositionState = cameraPositionState,
                         properties = mapProperties,
-                        // Zoom enabled per user request, pinch only — the
-                        // on-screen +/- buttons were tried too and then
-                        // explicitly asked to be removed. Scroll/rotation/
-                        // tilt stay off on purpose: this map sits inside
-                        // History's scrollable list, and a one-finger drag
-                        // should keep scrolling that list, not pan the map.
-                        // A two-finger pinch doesn't conflict with that.
+                        // Zoom + pan enabled per user request. Trade-off,
+                        // explicitly accepted: with scrollGesturesEnabled
+                        // on, a one-finger drag over the map now pans the
+                        // map instead of scrolling History's outer list —
+                        // to scroll past this card, drag somewhere else on
+                        // it (the title row, the stats). Rotation/tilt
+                        // stay off — not useful for reviewing a route.
                         uiSettings = MapUiSettings(
                             zoomControlsEnabled = false,
-                            scrollGesturesEnabled = false,
+                            scrollGesturesEnabled = true,
                             zoomGesturesEnabled = true,
                             rotationGesturesEnabled = false,
                             tiltGesturesEnabled = false,
