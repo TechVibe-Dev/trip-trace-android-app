@@ -190,8 +190,19 @@ fun CreateTripScreen(
 
             val originLat = if (useCurrentLocation) currentLat!! else PLACEHOLDER_LAT
             val originLng = if (useCurrentLocation) currentLng!! else PLACEHOLDER_LNG
+            // Best-effort, unlike destination/stops above — the origin
+            // comes from real GPS, not typed text, so a failure here is
+            // more likely a transient network/service hiccup than "this
+            // place doesn't exist". Not worth blocking a valid save just to
+            // give the origin a nicer name (android#69) — falls back to the
+            // previous fixed text silently.
+            val originName = if (useCurrentLocation) {
+                geocodingProvider.reverseGeocode(originLat, originLng).getOrDefault("Ubicacion actual")
+            } else {
+                "Origen"
+            }
             val request = TripCreateRequest(
-                originName = if (useCurrentLocation) "Ubicacion actual" else "Origen",
+                originName = originName,
                 originLat = originLat,
                 originLng = originLng,
                 destinationName = destination,
