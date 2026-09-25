@@ -3,6 +3,7 @@ package com.techvibedev.triptrace.data.network
 import com.techvibedev.triptrace.data.model.EtaRecalculationResponse
 import com.techvibedev.triptrace.data.model.GpsPointCreateRequest
 import com.techvibedev.triptrace.data.model.GpsPointResponse
+import com.techvibedev.triptrace.data.model.SegmentResponse
 import com.techvibedev.triptrace.data.model.StopCreateRequest
 import com.techvibedev.triptrace.data.model.StopResponse
 import com.techvibedev.triptrace.data.model.TripCreateRequest
@@ -86,4 +87,13 @@ interface TripApiService {
         @Header("Authorization") bearerToken: String,
         @Path("tripId") tripId: String,
     ): List<StopResponse>
+
+    // Same segments already used by the web frontend (trip-trace-frontend#6)
+    // to color a completed trip's route — SLOW/NORMAL/FAST stretches,
+    // classified server-side.
+    @GET("api/v1/trips/{tripId}/segments")
+    suspend fun listSegments(
+        @Header("Authorization") bearerToken: String,
+        @Path("tripId") tripId: String,
+    ): List<SegmentResponse>
 }
