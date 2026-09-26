@@ -7,6 +7,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Added a third bottom nav tab, "Usuario" — shows the logged-in user's email/username (`GET /auth/me`) and a "Cerrar sesion" button. First of three parts of `android#87`; password change and a sensor-recording on/off toggle land here next, as separate sections.
+
 ## [0.4.0] - 26 Sep 2026
 
 - Renamed the app from "TripTrace" to "Trip Trace". Synced the app's version (`versionName`/`versionCode` in `app/build.gradle.kts`) to this release — from here on, every release bumps these alongside the CHANGELOG entry.
