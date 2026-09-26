@@ -7,6 +7,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 26 Sep 2026
+
+- Renamed the app from "TripTrace" to "Trip Trace". Synced the app's version (`versionName`/`versionCode` in `app/build.gradle.kts`) to this release — from here on, every release bumps these alongside the CHANGELOG entry.
 - Create trip: destination and stops can now be confirmed (and corrected, by dragging the pin) on a map after typing an address, instead of geocoding "blind" with no way to see or fix a wrong result. Optional — saving without ever opening the map still resolves by geocoding the text at save time, same as before. If geocoding fails outright (not just imprecise, but no match at all), the map now opens anyway on a fallback center (current location, or the fixed placeholder) instead of leaving the user stuck on an error with no way forward — same for the dedicated map icon and for hitting Guardar directly. Closes `android#73`. ([#86](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/86))
 - Create trip now uses reverse geocoding (Android's built-in `Geocoder`) to name the origin with a real street address ("Solis 1234") instead of the fixed "Ubicacion actual" text, when using current location. Best-effort — falls back to the old fixed text on failure instead of blocking the save, since a real GPS coordinate is more likely to hit a transient service hiccup than to genuinely not exist. Closes `android#69`. ([#85](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/85))
 - Login now accepts either email or username (`trip-trace-api#57`) — relabeled the field, dropped the email-only keyboard type, updated the error message. Closes `android#83`. ([#84](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/84))
