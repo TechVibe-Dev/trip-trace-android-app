@@ -27,12 +27,14 @@ import com.techvibedev.triptrace.R
 import com.techvibedev.triptrace.data.local.GpsPointEntity
 import com.techvibedev.triptrace.data.local.SensorReadingEntity
 import com.techvibedev.triptrace.data.local.TripTraceDatabase
+import com.techvibedev.triptrace.data.session.SettingsDataStore
 import java.time.OffsetDateTime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 // Foreground service that keeps recording GPS points to Room while a trip is
@@ -91,8 +93,24 @@ class TripTrackingService : Service() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         createNotificationChannel()
-        registerSensorListeners()
-        startSensorFlushLoop()
+
+        // Checked once, here — not reactively for the rest of the service's
+        // life (android#87 part 3). Whatever the setting is when a trip's
+        // tracking starts is what applies for that whole trip; toggling it
+        // mid-trip only takes effect on the next one. Simpler than
+        // continuously collecting the Flow and dynamically registering/
+        // unregistering listeners, and matches how this setting is actually
+        // meant to be used — deciding ahead of time whether you want this
+        // trip's data for evaluation, not flipping it while driving.
+        serviceScope.launch {
+            val sensorRecordingEnabled = SettingsDataStore(applicationContext)
+                .sensorRecordingEnabledFlow
+                .first()
+            if (sensorRecordingEnabled) {
+                registerSensorListeners()
+                startSensorFlushLoop()
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
