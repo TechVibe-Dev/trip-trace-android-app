@@ -23,6 +23,7 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.techvibedev.triptrace.MainActivity
+import com.techvibedev.triptrace.R
 import com.techvibedev.triptrace.data.local.GpsPointEntity
 import com.techvibedev.triptrace.data.local.SensorReadingEntity
 import com.techvibedev.triptrace.data.local.TripTraceDatabase
@@ -208,7 +209,10 @@ class TripTrackingService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("TripTrace")
+            // Was a hardcoded "TripTrace" literal — read from the same
+            // resource the launcher name itself uses, so a rename (like
+            // "TripTrace" -> "Trip Trace") doesn't need a second edit here.
+            .setContentTitle(getString(R.string.app_name))
             .setContentText("Grabando tu viaje...")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pendingIntent)
