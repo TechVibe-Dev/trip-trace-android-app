@@ -31,8 +31,9 @@ import com.techvibedev.triptrace.ui.screens.createtrip.CreateTripScreen
 import com.techvibedev.triptrace.ui.screens.history.HistoryScreen
 import com.techvibedev.triptrace.ui.screens.login.LoginScreen
 import com.techvibedev.triptrace.ui.screens.trips.TripsScreen
+import com.techvibedev.triptrace.ui.screens.user.UserScreen
 
-private val routesWithBottomBar = setOf(Routes.TRIPS, Routes.HISTORY)
+private val routesWithBottomBar = setOf(Routes.TRIPS, Routes.HISTORY, Routes.USER)
 
 @Composable
 fun TripTraceNavHost(navController: NavHostController = rememberNavController()) {
@@ -106,6 +107,16 @@ fun TripTraceNavHost(navController: NavHostController = rememberNavController())
             }
             composable(Routes.HISTORY) {
                 HistoryScreen(tripRepository = tripRepository)
+            }
+            composable(Routes.USER) {
+                UserScreen(
+                    authRepository = authRepository,
+                    onLoggedOut = {
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                )
             }
             composable(Routes.CREATE_TRIP) {
                 CreateTripScreen(
