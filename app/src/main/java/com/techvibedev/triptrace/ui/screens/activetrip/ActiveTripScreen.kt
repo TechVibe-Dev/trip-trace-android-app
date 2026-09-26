@@ -52,6 +52,7 @@ import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberMarkerState
@@ -105,7 +106,13 @@ fun ActiveTripScreen(
     val gpsPointDao = remember {
         TripTraceDatabase.getInstance(context.applicationContext).gpsPointDao()
     }
-    val latestPoint by gpsPointDao.observeLatest(tripId).collectAsState(initial = null)
+    // Skips points with a null speed reading (see GpsPointDao) rather than
+    // always using the single latest point — GPS speed drops out in short
+    // bursts (turns, braking, patchy sky visibility) even while position
+    // stays fine, confirmed across a real drive. Using the latest point
+    // unconditionally meant the card could flash "--" for a few seconds
+    // even with a real reading moments earlier.
+    val latestPointWithSpeed by gpsPointDao.observeLatestWithSpeed(tripId).collectAsState(initial = null)
 
     var trip by remember { mutableStateOf<TripResponse?>(null) }
     var liveArrivalAt by remember { mutableStateOf<String?>(null) }
@@ -210,6 +217,19 @@ fun ActiveTripScreen(
                 tripRepository.finalizeTrip(tripId)
             }
 
+            // Local cleanup: once every point for this trip is confirmed
+            // synced (whether it already was, or just got uploaded above),
+            // Room's copy has served its purpose — History and the web
+            // frontend both read from the API, never from here. Leaves
+            // TripEntity itself in place (see GpsPointDao.deleteByTripId)
+            // so sensor_readings, a separate FK child of it kept for
+            // manual review (see HistoryScreen), isn't swept up too. If the
+            // upload failed and some points are still unsynced, nothing is
+            // deleted — same retry-later posture as the rest of Sync.
+            if (gpsPointDao.getUnsyncedByTripId(tripId).isEmpty()) {
+                gpsPointDao.deleteByTripId(tripId)
+            }
+
             TripTrackingService.stop(context)
             isEnding = false
             endResult.fold(
@@ -302,7 +322,7 @@ fun ActiveTripScreen(
                 ) {
                     StatCard(
                         label = "Velocidad",
-                        value = formatSpeed(latestPoint?.speed),
+                        value = formatSpeed(latestPointWithSpeed?.speed),
                         modifier = Modifier.weight(1f),
                     )
                     StatCard(
@@ -481,7 +501,7 @@ private fun vectorToBitmapDescriptor(context: Context, drawableResId: Int): Bitm
 }
 
 // Live map: current position + the route recorded so far, sourced straight
-// from Room (observeAllByTripId, ~every 10s as the tracking service
+// from Room (observeAllByTripId, ~every 3s as the tracking service
 // records) rather than the API — this needs to feel instant, not wait on
 // the 30s sync cycle above, which exists to get data to the server, not to
 // redraw the phone's own map. Camera follows the latest position, like a
@@ -511,6 +531,18 @@ private fun LiveRouteMap(
     val mapProperties = remember {
         MapProperties(mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark))
     }
+    // Holds the current-position marker's state ourselves rather than using
+    // rememberMarkerState(position = ...) — that helper only sets position
+    // on the marker's FIRST creation; passing a fresh position on later
+    // recompositions is silently ignored, since remember() only re-runs its
+    // block when its key changes (no key here means "compute once, ever").
+    // That's what left the arrow frozen at the trip's origin during a real
+    // drive (a continuous session recomposing many times) — earlier walking
+    // tests likely each reopened the screen fresh, masking it, since a
+    // fresh composition picks up whatever the latest point was at that
+    // moment. Reassigning .position explicitly below, every recomposition,
+    // mirrors exactly how the camera above is already kept live.
+    val currentPositionMarkerState = remember { MarkerState() }
 
     LaunchedEffect(points.size) {
         val latest = points.lastOrNull() ?: return@LaunchedEffect
@@ -552,6 +584,10 @@ private fun LiveRouteMap(
             // points recorded yet — is not safe.
             val navArrowIcon = remember { vectorToBitmapDescriptor(context, R.drawable.ic_nav_arrow) }
             val latest = points.last()
+            // Reassigned every recomposition (every new point), same
+            // reasoning as the comment on currentPositionMarkerState above.
+            currentPositionMarkerState.position = LatLng(latest.lat, latest.lng)
+
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
@@ -565,7 +601,7 @@ private fun LiveRouteMap(
                     )
                 }
                 Marker(
-                    state = rememberMarkerState(position = LatLng(latest.lat, latest.lng)),
+                    state = currentPositionMarkerState,
                     icon = navArrowIcon,
                     // GPS bearing is noisy/unreliable at low or zero speed
                     // (a known limitation, not specific to this app) — null

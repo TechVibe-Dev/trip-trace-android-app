@@ -28,10 +28,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.techvibedev.triptrace.R
 import com.techvibedev.triptrace.data.repository.AuthRepository
 import kotlinx.coroutines.launch
 
@@ -42,7 +44,7 @@ import kotlinx.coroutines.launch
 // providers than the newer API. Revisit once the BOM gets bumped.
 @Composable
 fun LoginScreen(authRepository: AuthRepository, onLoginSuccess: () -> Unit) {
-    var email by remember { mutableStateOf("") }
+    var identifier by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -72,19 +74,26 @@ fun LoginScreen(authRepository: AuthRepository, onLoginSuccess: () -> Unit) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "TripTrace",
+            // Was a hardcoded "TripTrace" literal — reads from the same
+            // resource as the launcher name now, so a rename doesn't need
+            // a second edit here.
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineMedium,
         )
 
         Spacer(modifier = Modifier.height(40.dp))
 
         OutlinedTextField(
-            value = email,
-            onValueChange = { email = it },
-            label = { Text("Email") },
+            value = identifier,
+            onValueChange = { identifier = it },
+            label = { Text("Email o usuario") },
             singleLine = true,
             enabled = !isLoading,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            // Plain Text, not Email — this field now accepts either a
+            // username or an email (trip-trace-api#57), and forcing the
+            // email-style keyboard (with its dedicated "@" key) would be a
+            // bad fit for typing a plain username.
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -117,17 +126,17 @@ fun LoginScreen(authRepository: AuthRepository, onLoginSuccess: () -> Unit) {
                 errorMessage = null
                 isLoading = true
                 scope.launch {
-                    val result = authRepository.login(email, password)
+                    val result = authRepository.login(identifier, password)
                     isLoading = false
                     result.fold(
                         onSuccess = { onLoginSuccess() },
                         onFailure = {
-                            errorMessage = "No se pudo iniciar sesion. Revisa tu email y contrasena."
+                            errorMessage = "No se pudo iniciar sesion. Revisa tu email/usuario y contrasena."
                         },
                     )
                 }
             },
-            enabled = !isLoading && email.isNotBlank() && password.isNotBlank(),
+            enabled = !isLoading && identifier.isNotBlank() && password.isNotBlank(),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),

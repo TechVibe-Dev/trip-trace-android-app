@@ -47,8 +47,16 @@ android {
         applicationId = "com.techvibedev.triptrace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // Kept in sync with the CHANGELOG version on every release from
+        // here on (previously both were left at their initial placeholder
+        // value since the project started). versionCode is the plain
+        // internal counter Android itself uses to tell builds apart (never
+        // shown to the user) — it only needs to strictly increase, so it
+        // just goes up by 1 each release rather than encoding the version
+        // number itself. versionName is the human-readable one shown in
+        // Settings > Apps.
+        versionCode = 2
+        versionName = "0.4.0"
 
         manifestPlaceholders["mapsApiKey"] = mapsApiKey
     }

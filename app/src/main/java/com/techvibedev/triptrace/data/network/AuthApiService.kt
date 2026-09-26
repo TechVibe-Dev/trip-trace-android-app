@@ -18,12 +18,14 @@ interface AuthApiService {
     suspend fun register(@Body request: RegisterRequest): UserResponse
 
     // /login expects OAuth2PasswordRequestForm (form-urlencoded), not JSON —
-    // "username" is the field name FastAPI uses even though we send the
-    // email as its value.
+    // "username" is the field name FastAPI uses per the OAuth2 spec. The API
+    // now accepts either the user's actual username or their email there
+    // (trip-trace-api#57, android#83), hence "identifier" as the Kotlin
+    // param name instead of the old "email".
     @FormUrlEncoded
     @POST("api/v1/auth/login")
     suspend fun login(
-        @Field("username") email: String,
+        @Field("username") identifier: String,
         @Field("password") password: String,
     ): TokenResponse
 
