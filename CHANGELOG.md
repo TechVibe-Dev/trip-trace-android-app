@@ -7,8 +7,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- Added a "Cambiar contrasena" dialog to the Perfil tab (`PUT /auth/me/password`, `trip-trace-api#60`) — asks for the current password alongside the new one, and shows a specific "contrasena actual incorrecta" message when that's what failed, vs. a generic error for anything else (network, server). Second of three parts of `android#87`; a sensor-recording on/off toggle lands here next.
-- Added a third bottom nav tab, "Perfil" (originally "Usuario", renamed) — shows the logged-in user's email/username (`GET /auth/me`) and a "Cerrar sesion" button. First of three parts of `android#87`.
+- Added a toggle to the Perfil tab to turn raw sensor recording (`android#77`) on/off — previously it always ran during a trip. Checked once when a trip's tracking starts, so flipping it mid-trip only takes effect on the next one, not the one already running. Closes `android#87`.
+- Added a "Cambiar contrasena" dialog to the Perfil tab (`PUT /auth/me/password`, `trip-trace-api#60`) — asks for the current password alongside the new one, and shows a specific "contrasena actual incorrecta" message when that's what failed, vs. a generic error for anything else (network, server).
+- Added a third bottom nav tab, "Perfil" (originally "Usuario", renamed) — shows the logged-in user's email/username (`GET /auth/me`) and a "Cerrar sesion" button.
 
 ## [0.4.0] - 26 Sep 2026
 
