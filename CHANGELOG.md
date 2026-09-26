@@ -7,7 +7,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- Added a third bottom nav tab, "Usuario" — shows the logged-in user's email/username (`GET /auth/me`) and a "Cerrar sesion" button. First of three parts of `android#87`; password change and a sensor-recording on/off toggle land here next, as separate sections.
+- Added a "Cambiar contrasena" dialog to the Perfil tab (`PUT /auth/me/password`, `trip-trace-api#60`) — asks for the current password alongside the new one, and shows a specific "contrasena actual incorrecta" message when that's what failed, vs. a generic error for anything else (network, server). Second of three parts of `android#87`; a sensor-recording on/off toggle lands here next.
+- Added a third bottom nav tab, "Perfil" (originally "Usuario", renamed) — shows the logged-in user's email/username (`GET /auth/me`) and a "Cerrar sesion" button. First of three parts of `android#87`.
 
 ## [0.4.0] - 26 Sep 2026
 
