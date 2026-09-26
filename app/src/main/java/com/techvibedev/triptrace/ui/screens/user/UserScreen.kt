@@ -3,11 +3,13 @@ package com.techvibedev.triptrace.ui.screens.user
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -15,10 +17,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,21 +30,26 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.techvibedev.triptrace.data.model.UserResponse
 import com.techvibedev.triptrace.data.repository.AuthRepository
+import com.techvibedev.triptrace.data.session.SettingsDataStore
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
-// First piece of android#87 — profile display + logout. The
-// sensor-recording toggle lands here too, as a separate section, once its
-// own groundwork (a local DataStore setting) is in place.
+// Three parts of android#87: profile display + logout (this file), password
+// change (ChangePasswordDialog below), and the sensor-recording toggle
+// (SensorRecordingToggle below).
 @Composable
 fun UserScreen(
     authRepository: AuthRepository,
     onLoggedOut: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val settingsDataStore = remember { SettingsDataStore(context.applicationContext) }
+
     var user by remember { mutableStateOf<UserResponse?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -90,6 +99,10 @@ fun UserScreen(
                 ProfileCard(user = user!!)
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        SensorRecordingCard(settingsDataStore = settingsDataStore)
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -172,6 +185,49 @@ private fun ProfileRow(label: String, value: String) {
             text = value,
             style = MaterialTheme.typography.bodyLarge,
         )
+    }
+}
+
+// android#87 part 3 — lets the user turn off raw accelerometer/gyroscope
+// recording (android#77), which TripTrackingService otherwise always did.
+// Checked once when a trip's tracking starts (see that service), so
+// toggling here only takes effect on the NEXT trip, not one already running.
+@Composable
+private fun SensorRecordingCard(settingsDataStore: SettingsDataStore) {
+    val scope = rememberCoroutineScope()
+    val sensorRecordingEnabled by settingsDataStore.sensorRecordingEnabledFlow.collectAsState(initial = true)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Grabar datos de sensores",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = "Acelerometro y giroscopio durante el viaje, para evaluar mejoras " +
+                        "futuras. No se envian al servidor.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(
+                checked = sensorRecordingEnabled,
+                onCheckedChange = { enabled ->
+                    scope.launch { settingsDataStore.setSensorRecordingEnabled(enabled) }
+                },
+            )
+        }
     }
 }
 
