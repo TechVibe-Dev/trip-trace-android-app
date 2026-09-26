@@ -24,3 +24,12 @@ data class TokenResponse(
 data class UserUpdateRequest(
     val username: String?,
 )
+
+// Separate from UserUpdateRequest (android#87) — matches the API's own
+// separate PUT /auth/me/password endpoint, kept apart from the plain
+// profile update for the same reason: changing a password is more
+// security-sensitive than editing username.
+data class PasswordChangeRequest(
+    @SerializedName("current_password") val currentPassword: String,
+    @SerializedName("new_password") val newPassword: String,
+)
