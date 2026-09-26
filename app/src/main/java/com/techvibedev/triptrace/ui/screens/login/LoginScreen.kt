@@ -28,10 +28,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.techvibedev.triptrace.R
 import com.techvibedev.triptrace.data.repository.AuthRepository
 import kotlinx.coroutines.launch
 
@@ -72,7 +74,10 @@ fun LoginScreen(authRepository: AuthRepository, onLoginSuccess: () -> Unit) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "TripTrace",
+            // Was a hardcoded "TripTrace" literal — reads from the same
+            // resource as the launcher name now, so a rename doesn't need
+            // a second edit here.
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineMedium,
         )
 
