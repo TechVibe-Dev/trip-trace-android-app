@@ -21,7 +21,7 @@ private data class BottomNavItem(
 private val bottomNavItems = listOf(
     BottomNavItem(route = Routes.TRIPS, label = "Viajes", icon = Icons.Filled.DirectionsCar),
     BottomNavItem(route = Routes.HISTORY, label = "Historial", icon = Icons.Filled.History),
-    BottomNavItem(route = Routes.USER, label = "Usuario", icon = Icons.Filled.Person),
+    BottomNavItem(route = Routes.USER, label = "Perfil", icon = Icons.Filled.Person),
 )
 
 @Composable
