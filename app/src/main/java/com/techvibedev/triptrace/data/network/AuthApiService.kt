@@ -1,5 +1,6 @@
 package com.techvibedev.triptrace.data.network
 
+import com.techvibedev.triptrace.data.model.PasswordChangeRequest
 import com.techvibedev.triptrace.data.model.RegisterRequest
 import com.techvibedev.triptrace.data.model.TokenResponse
 import com.techvibedev.triptrace.data.model.UserResponse
@@ -37,4 +38,13 @@ interface AuthApiService {
         @Header("Authorization") bearerToken: String,
         @Body request: UserUpdateRequest,
     ): UserResponse
+
+    // Separate endpoint from updateMe (trip-trace-api#60, android#87) —
+    // requires current_password since a valid session alone doesn't prove
+    // the caller still knows the password.
+    @PUT("api/v1/auth/me/password")
+    suspend fun changePassword(
+        @Header("Authorization") bearerToken: String,
+        @Body request: PasswordChangeRequest,
+    )
 }
