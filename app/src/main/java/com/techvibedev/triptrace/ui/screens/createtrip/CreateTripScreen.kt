@@ -76,7 +76,9 @@ import kotlinx.coroutines.launch
 // Origin still falls back to a placeholder when the user opts out of
 // "Ubicacion actual" — there's no text field for typing a custom origin
 // address yet, only the current-location toggle. Destination and stops are
-// geocoded from whatever text the user types (see GeocodingProvider).
+// geocoded from whatever text the user types (see GeocodingProvider). Also
+// used as the map-confirm dialog's fallback center when geocoding fails
+// outright and there's no current GPS location to center on instead.
 private const val PLACEHOLDER_LAT = -34.9011
 private const val PLACEHOLDER_LNG = -56.1645
 
@@ -107,6 +109,11 @@ private data class MapConfirmState(
     val label: String,
     val lat: Double,
     val lng: Double,
+    // false when geocoding couldn't resolve the typed text at all, and the
+    // dialog opened anyway with a fallback center so the user can place the
+    // pin themselves — the dialog shows different guidance text in that
+    // case, since there's no "found" point to merely adjust.
+    val wasGeocoded: Boolean,
 )
 
 @Composable
@@ -145,6 +152,14 @@ fun CreateTripScreen(
     var mapConfirmState by remember { mutableStateOf<MapConfirmState?>(null) }
     var isResolvingMapConfirm by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // Center for the map-confirm dialog when geocoding fails outright and
+    // there's nothing found to center on instead — the user's current
+    // location is a reasonable starting guess (the destination is often
+    // somewhere near where the trip starts), falling back to the same
+    // fixed placeholder the origin itself uses when GPS isn't available.
+    fun fallbackMapCenter(): Pair<Double, Double> =
+        (currentLat ?: PLACEHOLDER_LAT) to (currentLng ?: PLACEHOLDER_LNG)
 
     suspend fun fetchCurrentLocation() {
         isLoadingLocation = true
@@ -197,7 +212,10 @@ fun CreateTripScreen(
 
     // Geocodes (unless already confirmed on the map) and opens the confirm
     // dialog for the destination — reuses destinationCoords as the starting
-    // pin position if the user is reopening it to adjust further.
+    // pin position if the user is reopening it to adjust further. If
+    // geocoding fails outright, opens the dialog anyway on a fallback
+    // center instead of just leaving the user stuck on an error message —
+    // they place the pin themselves.
     fun openMapConfirmForDestination() {
         if (destination.isBlank()) {
             errorMessage = "Ingresa un destino primero"
@@ -207,12 +225,15 @@ fun CreateTripScreen(
             isResolvingMapConfirm = true
             val coords = destinationCoords ?: geocodingProvider.geocode(destination).getOrNull()
             isResolvingMapConfirm = false
-            if (coords == null) {
-                errorMessage = "No se encontro esa direccion, proba con otro texto"
-            } else {
-                errorMessage = null
-                mapConfirmState = MapConfirmState(ConfirmTarget.Destination, destination, coords.first, coords.second)
-            }
+            errorMessage = null
+            val (lat, lng) = coords ?: fallbackMapCenter()
+            mapConfirmState = MapConfirmState(
+                target = ConfirmTarget.Destination,
+                label = destination,
+                lat = lat,
+                lng = lng,
+                wasGeocoded = coords != null,
+            )
         }
     }
 
@@ -226,12 +247,15 @@ fun CreateTripScreen(
                 geocodingProvider.geocode(stop.name).getOrNull()
             }
             isResolvingMapConfirm = false
-            if (coords == null) {
-                errorMessage = "No se encontro la parada \"${stop.name}\", proba con otro texto"
-            } else {
-                errorMessage = null
-                mapConfirmState = MapConfirmState(ConfirmTarget.Stop(index), stop.name, coords.first, coords.second)
-            }
+            errorMessage = null
+            val (lat, lng) = coords ?: fallbackMapCenter()
+            mapConfirmState = MapConfirmState(
+                target = ConfirmTarget.Stop(index),
+                label = stop.name,
+                lat = lat,
+                lng = lng,
+                wasGeocoded = coords != null,
+            )
         }
     }
 
@@ -259,21 +283,31 @@ fun CreateTripScreen(
             // Use the map-confirmed point if there is one (android#73) —
             // otherwise fall back to geocoding the text, same as before
             // this feature existed. Confirming on the map is optional, not
-            // a required step.
+            // a required step — unless geocoding fails outright, in which
+            // case there's no other way to resolve a point, so the map
+            // opens automatically instead of just leaving the user stuck.
             val destinationCoordsResolved = destinationCoords
                 ?: geocodingProvider.geocode(destination).getOrNull()
             if (destinationCoordsResolved == null) {
                 isSaving = false
-                errorMessage = "No se encontro esa direccion, proba con otro texto"
+                val (lat, lng) = fallbackMapCenter()
+                mapConfirmState = MapConfirmState(
+                    target = ConfirmTarget.Destination,
+                    label = destination,
+                    lat = lat,
+                    lng = lng,
+                    wasGeocoded = false,
+                )
+                errorMessage = "No se encontro \"$destination\" automaticamente — marca el punto en el mapa"
                 return@launch
             }
 
             // Same either/or resolution per stop — geocode only the ones
             // that weren't already confirmed on the map. If any one of them
-            // can't be resolved, nothing gets created yet, so we never end
-            // up with a trip whose stops are silently missing.
+            // can't be resolved, same treatment as the destination above:
+            // open the map for that specific stop instead of just erroring.
             val geocodedStops = mutableListOf<Pair<String, Pair<Double, Double>>>()
-            for (stop in stops) {
+            for ((index, stop) in stops.withIndex()) {
                 val stopCoords = if (stop.confirmedLat != null && stop.confirmedLng != null) {
                     stop.confirmedLat to stop.confirmedLng
                 } else {
@@ -281,7 +315,15 @@ fun CreateTripScreen(
                 }
                 if (stopCoords == null) {
                     isSaving = false
-                    errorMessage = "No se encontro la parada \"${stop.name}\", proba con otro texto"
+                    val (lat, lng) = fallbackMapCenter()
+                    mapConfirmState = MapConfirmState(
+                        target = ConfirmTarget.Stop(index),
+                        label = stop.name,
+                        lat = lat,
+                        lng = lng,
+                        wasGeocoded = false,
+                    )
+                    errorMessage = "No se encontro \"${stop.name}\" automaticamente — marca el punto en el mapa"
                     return@launch
                 }
                 geocodedStops.add(stop.name to stopCoords)
@@ -518,6 +560,7 @@ fun CreateTripScreen(
             label = state.label,
             initialLat = state.lat,
             initialLng = state.lng,
+            wasGeocoded = state.wasGeocoded,
             onConfirm = { lat, lng ->
                 when (val target = state.target) {
                     is ConfirmTarget.Destination -> destinationCoords = lat to lng
@@ -623,11 +666,16 @@ private fun StopRow(
 // this dialog still works exactly as before, resolving via geocoding at
 // save time. Used for both the destination and any stop, distinguished by
 // the caller via `label` and where the confirmed point gets stored.
+//
+// wasGeocoded = false means geocoding couldn't resolve the typed text at
+// all — the dialog still opens, centered on a fallback point, so the user
+// has a way to place the pin themselves instead of hitting a dead end.
 @Composable
 private fun LocationConfirmDialog(
     label: String,
     initialLat: Double,
     initialLng: Double,
+    wasGeocoded: Boolean,
     onConfirm: (Double, Double) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -662,9 +710,18 @@ private fun LocationConfirmDialog(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Mantene presionado el pin para arrastrarlo y ajustar la ubicacion.",
+                text = if (wasGeocoded) {
+                    "Mantene presionado el pin para arrastrarlo y ajustar la ubicacion."
+                } else {
+                    "No pudimos encontrar esta direccion automaticamente. Mantene presionado " +
+                        "el pin y arrastralo hasta el lugar correcto."
+                },
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (wasGeocoded) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
             )
             Spacer(modifier = Modifier.height(12.dp))
             Box(
