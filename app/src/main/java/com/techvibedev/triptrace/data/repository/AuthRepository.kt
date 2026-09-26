@@ -11,9 +11,10 @@ class AuthRepository(
 ) {
     val isLoggedIn: Flow<Boolean> = tokenDataStore.tokenFlow.map { token -> token != null }
 
-    suspend fun login(email: String, password: String): Result<Unit> {
+    // identifier: either the user's email or their username (trip-trace-api#57).
+    suspend fun login(identifier: String, password: String): Result<Unit> {
         return try {
-            val response = apiService.login(email, password)
+            val response = apiService.login(identifier, password)
             tokenDataStore.saveToken(response.accessToken)
             Result.success(Unit)
         } catch (e: Exception) {
