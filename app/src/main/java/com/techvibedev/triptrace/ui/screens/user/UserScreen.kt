@@ -61,7 +61,7 @@ fun UserScreen(
             .padding(16.dp),
     ) {
         Text(
-            text = "Usuario",
+            text = "Perfil",
             style = MaterialTheme.typography.titleMedium,
         )
 
