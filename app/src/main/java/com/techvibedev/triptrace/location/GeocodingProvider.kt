@@ -1,6 +1,7 @@
 package com.techvibedev.triptrace.location
 
 import android.content.Context
+import android.location.Address
 import android.location.Geocoder
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -41,4 +42,43 @@ class GeocodingProvider(private val context: Context) {
                 Result.failure(e)
             }
         }
+
+    // The other direction: lat/lng -> a readable address, used to name the
+    // origin when it comes from GPS instead of typed text (android#69).
+    // Prefers "calle y numero" (getThoroughfare + getSubThoroughfare) since
+    // that's a more natural short label than Android's full formatted
+    // address line, falling back to that full line when the shorter pieces
+    // aren't available (not every geocoder response has a street number,
+    // e.g. rural areas or some non-US-style address formats).
+    suspend fun reverseGeocode(lat: Double, lng: Double): Result<String> =
+        withContext(Dispatchers.IO) {
+            if (!Geocoder.isPresent()) {
+                return@withContext Result.failure(
+                    IllegalStateException("Geocoding no disponible en este dispositivo"),
+                )
+            }
+            try {
+                val geocoder = Geocoder(context, Locale.getDefault())
+                @Suppress("DEPRECATION")
+                val results = geocoder.getFromLocation(lat, lng, 1)
+                val match = results?.firstOrNull()
+                if (match == null) {
+                    Result.failure(NoSuchElementException("No se pudo resolver la direccion"))
+                } else {
+                    Result.success(formatAddress(match))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    private fun formatAddress(address: Address): String {
+        val street = address.thoroughfare
+        val number = address.subThoroughfare
+        return when {
+            street != null && number != null -> "$street $number"
+            street != null -> street
+            else -> address.getAddressLine(0) ?: "Ubicacion actual"
+        }
+    }
 }
