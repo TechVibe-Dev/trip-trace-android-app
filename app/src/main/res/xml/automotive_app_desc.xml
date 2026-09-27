@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Declares which Car App Library capabilities this app uses — "template"
+     is the standard templating system (lists, messages, etc.), the only
+     one relevant here. Referenced from AndroidManifest.xml via the
+     com.google.android.gms.car.application meta-data entry. -->
+<automotiveApp>
+    <uses name="template" />
+</automotiveApp>
