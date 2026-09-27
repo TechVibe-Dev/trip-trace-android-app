@@ -39,9 +39,6 @@ import com.techvibedev.triptrace.data.session.SettingsDataStore
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
-// Three parts of android#87: profile display + logout (this file), password
-// change (ChangePasswordDialog below), and the sensor-recording toggle
-// (SensorRecordingToggle below).
 @Composable
 fun UserScreen(
     authRepository: AuthRepository,
@@ -188,10 +185,10 @@ private fun ProfileRow(label: String, value: String) {
     }
 }
 
-// android#87 part 3 — lets the user turn off raw accelerometer/gyroscope
-// recording (android#77), which TripTrackingService otherwise always did.
-// Checked once when a trip's tracking starts (see that service), so
-// toggling here only takes effect on the NEXT trip, not one already running.
+// Lets the user turn off raw accelerometer/gyroscope recording, which
+// TripTrackingService otherwise always did. Checked once when a trip's
+// tracking starts (see that service), so toggling here only takes effect on
+// the NEXT trip, not one already running.
 @Composable
 private fun SensorRecordingCard(settingsDataStore: SettingsDataStore) {
     val scope = rememberCoroutineScope()
@@ -231,10 +228,10 @@ private fun SensorRecordingCard(settingsDataStore: SettingsDataStore) {
     }
 }
 
-// trip-trace-api#60 / android#87 part 2. current_password is required by
-// the API itself (see that PR's reasoning) — this dialog just collects it
-// alongside the new password, with the new/confirm match checked locally
-// before ever calling the network.
+// current_password is required by the API itself (see that endpoint's own
+// reasoning) — this dialog just collects it alongside the new password,
+// with the new/confirm match checked locally before ever calling the
+// network.
 @Composable
 private fun ChangePasswordDialog(
     authRepository: AuthRepository,
@@ -266,9 +263,9 @@ private fun ChangePasswordDialog(
                 onSuccess = { onChanged() },
                 onFailure = { exception ->
                     // 400 from the API specifically means current_password
-                    // didn't match (see trip-trace-api#60) — anything else
-                    // (network, 5xx) gets a generic message instead of
-                    // implying the password itself was wrong.
+                    // didn't match — anything else (network, 5xx) gets a
+                    // generic message instead of implying the password
+                    // itself was wrong.
                     errorMessage = if (exception is HttpException && exception.code() == 400) {
                         "La contrasena actual es incorrecta"
                     } else {
