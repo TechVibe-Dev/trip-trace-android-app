@@ -7,6 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Create trip: "Hora de salida" and "Quiero llegar" are now a native time picker instead of free-text fields — every value it can produce is already valid, removing the old failure mode where a typo silently got dropped at save time with no feedback. Closes `android#59`.
 - Added a toggle to the Perfil tab to turn raw sensor recording (`android#77`) on/off — previously it always ran during a trip. Checked once when a trip's tracking starts, so flipping it mid-trip only takes effect on the next one, not the one already running. Closes `android#87`.
 - Added a "Cambiar contraseña" dialog to the Perfil tab (`PUT /auth/me/password`, `trip-trace-api#60`) — asks for the current password alongside the new one, and shows a specific "contraseña actual incorrecta" message when that's what failed, vs. a generic error for anything else (network, server). Changing the password invalidates every existing token for the account (server-side, no per-device exception) — after a successful change, the app now logs the local session out and returns to Login itself, instead of staying on a now-broken session where every screen failed with a generic error until the user found "Cerrar sesion" on their own (found during testing).
 - Added a third bottom nav tab, "Perfil" (originally "Usuario", renamed) — shows the logged-in user's email/username (`GET /auth/me`) and a "Cerrar sesion" button.

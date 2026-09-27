@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.techvibedev.triptrace.ui.screens.createtrip
 
 import android.Manifest
@@ -21,19 +23,25 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditLocation
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -86,8 +94,8 @@ private const val LOG_TAG = "CreateTripScreen"
 
 // A stop as entered here — name is always required; confirmedLat/Lng are
 // set only if the user opened the map-confirm dialog for this stop and
-// dragged the pin (android#73). Both null means "not confirmed yet, resolve
-// by geocoding the name at save time" — the same as before this feature
+// dragged the pin. Both null means "not confirmed yet, resolve by
+// geocoding the name at save time" — the same as before this feature
 // existed, so typing a stop and saving without ever touching the map still
 // works exactly as it did.
 private data class StopDraft(
@@ -280,12 +288,12 @@ fun CreateTripScreen(
         errorMessage = null
         isSaving = true
         scope.launch {
-            // Use the map-confirmed point if there is one (android#73) —
-            // otherwise fall back to geocoding the text, same as before
-            // this feature existed. Confirming on the map is optional, not
-            // a required step — unless geocoding fails outright, in which
-            // case there's no other way to resolve a point, so the map
-            // opens automatically instead of just leaving the user stuck.
+            // Use the map-confirmed point if there is one — otherwise fall
+            // back to geocoding the text, same as before this feature
+            // existed. Confirming on the map is optional, not a required
+            // step — unless geocoding fails outright, in which case
+            // there's no other way to resolve a point, so the map opens
+            // automatically instead of just leaving the user stuck.
             val destinationCoordsResolved = destinationCoords
                 ?: geocodingProvider.geocode(destination).getOrNull()
             if (destinationCoordsResolved == null) {
@@ -335,8 +343,8 @@ fun CreateTripScreen(
             // comes from real GPS, not typed text, so a failure here is
             // more likely a transient network/service hiccup than "this
             // place doesn't exist". Not worth blocking a valid save just to
-            // give the origin a nicer name (android#69) — falls back to the
-            // previous fixed text silently.
+            // give the origin a nicer name — falls back to the previous
+            // fixed text silently.
             val originName = if (useCurrentLocation) {
                 geocodingProvider.reverseGeocode(originLat, originLng).getOrDefault("Ubicacion actual")
             } else {
@@ -493,23 +501,26 @@ fun CreateTripScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
+        // These were plain free-text fields ("18:30" typed by hand), easy
+        // to mistype with no feedback until save silently dropped an
+        // unparseable value. A native time picker removes that failure
+        // mode entirely — every value it can produce is valid.
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedTextField(
-                value = departureTime,
-                onValueChange = { departureTime = it },
-                label = { Text("Hora de salida") },
-                singleLine = true,
+            TimePickerField(
+                label = "Hora de salida",
+                timeText = departureTime,
+                onTimeSelected = { departureTime = it },
                 enabled = !isSaving,
                 modifier = Modifier.weight(1f),
             )
-            OutlinedTextField(
-                value = desiredArrivalTime,
-                onValueChange = { desiredArrivalTime = it },
-                label = { Text("Quiero llegar (opcional)") },
-                singleLine = true,
+            TimePickerField(
+                label = "Quiero llegar (opcional)",
+                timeText = desiredArrivalTime,
+                onTimeSelected = { desiredArrivalTime = it },
+                onClear = { desiredArrivalTime = "" },
                 enabled = !isSaving,
                 modifier = Modifier.weight(1f),
             )
@@ -659,10 +670,97 @@ private fun StopRow(
     }
 }
 
+// A read-only field that opens a native TimePicker dialog on tap, instead
+// of accepting freeform text — every value it can produce is already a
+// valid "HH:mm", so timeTextToIso() below never has to reject a typo.
+// onClear is only passed for the optional field (desired arrival); the
+// departure field is always required, so it has nothing to clear to.
+@Composable
+private fun TimePickerField(
+    label: String,
+    timeText: String,
+    onTimeSelected: (String) -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClear: (() -> Unit)? = null,
+) {
+    var showDialog by remember { mutableStateOf(false) }
+
+    OutlinedTextField(
+        value = timeText,
+        onValueChange = {},
+        readOnly = true,
+        label = { Text(label) },
+        singleLine = true,
+        enabled = enabled,
+        trailingIcon = {
+            Row {
+                if (onClear != null && timeText.isNotEmpty()) {
+                    IconButton(onClick = onClear, enabled = enabled) {
+                        Icon(imageVector = Icons.Filled.Clear, contentDescription = "Borrar hora")
+                    }
+                }
+                IconButton(onClick = { showDialog = true }, enabled = enabled) {
+                    Icon(imageVector = Icons.Filled.AccessTime, contentDescription = "Elegir hora")
+                }
+            }
+        },
+        modifier = modifier,
+    )
+
+    if (showDialog) {
+        val initial = parseTimeOrNull(timeText) ?: LocalTime.now()
+        val timePickerState = rememberTimePickerState(
+            initialHour = initial.hour,
+            initialMinute = initial.minute,
+            is24Hour = true,
+        )
+        TimePickerDialog(
+            onDismiss = { showDialog = false },
+            onConfirm = {
+                onTimeSelected("%02d:%02d".format(timePickerState.hour, timePickerState.minute))
+                showDialog = false
+            },
+        ) {
+            TimePicker(state = timePickerState)
+        }
+    }
+}
+
+@Composable
+private fun TimePickerDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                content()
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(onClick = onConfirm) { Text("OK") }
+                }
+            }
+        }
+    }
+}
+
 // Lets the user see where a typed address actually geocoded to, and drag
-// the pin to correct it if it's off (android#73) — the core gap this issue
-// was about: geocoding happened "blind" before, with no way to see or fix
-// a wrong result. Confirming here is optional; saving without ever opening
+// the pin to correct it if it's off — the core gap this dialog exists to
+// close: geocoding happened "blind" before, with no way to see or fix a
+// wrong result. Confirming here is optional; saving without ever opening
 // this dialog still works exactly as before, resolving via geocoding at
 // save time. Used for both the destination and any stop, distinguished by
 // the caller via `label` and where the confirmed point gets stored.
@@ -680,9 +778,9 @@ private fun LocationConfirmDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    // Dark map style (android#68), consistent with every other map in the
-    // app. Remembered so it's parsed once, not on every recomposition
-    // while the marker is being dragged.
+    // Dark map style, consistent with every other map in the app.
+    // Remembered so it's parsed once, not on every recomposition while the
+    // marker is being dragged.
     val mapProperties = remember {
         MapProperties(mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark))
     }
@@ -765,6 +863,14 @@ private fun LocationConfirmDialog(
                 }
             }
         }
+    }
+}
+
+private fun parseTimeOrNull(timeText: String): LocalTime? {
+    return try {
+        LocalTime.parse(timeText)
+    } catch (e: DateTimeParseException) {
+        null
     }
 }
 
