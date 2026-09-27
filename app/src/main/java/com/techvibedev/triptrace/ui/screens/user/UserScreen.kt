@@ -298,12 +298,20 @@ private fun FavoritesCard(
     }
 }
 
+// Fallback map center when there's no address text to geocode and no GPS
+// fix available either — same fixed point Create trip falls back to.
+private const val FALLBACK_LAT = -34.9011
+private const val FALLBACK_LNG = -56.1645
+
 // Two ways to set the favorite's point, same as Create trip: type an
 // address (geocode → confirm/adjust the pin), or use the current GPS
 // location — both funnel into the same LocationConfirmDialog, so the user
-// always gets a chance to adjust before saving. "Casa"/"Trabajo" are
-// pre-defined name suggestions, not fixed slots — tapping one just fills
-// the name field, same as typing it by hand.
+// always gets a chance to adjust before saving. The map-pin icon also
+// works with the address field left blank — falls back to current location
+// (or the fixed point above, if that's not available either) as a starting
+// position, so placing a pin doesn't strictly require typing an address
+// first. "Casa"/"Trabajo" are pre-defined name suggestions, not fixed
+// slots — tapping one just fills the name field, same as typing it by hand.
 //
 // Mutually exclusive with the location-confirm step, rather than stacked:
 // showing both AlertDialog and LocationConfirmDialog at once would be two
@@ -326,26 +334,41 @@ private fun AddFavoriteDialog(
     var isSaving by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var confirmCoords by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    // Only meaningful when the map opened without ever successfully
+    // geocoding a real address — LocationConfirmDialog shows different
+    // guidance text in that case ("we couldn't find this" vs "adjust the
+    // pin"), same distinction Create trip's own map-confirm dialog makes.
+    var wasGeocoded by remember { mutableStateOf(false) }
 
-    fun openConfirmFromAddress() {
+    fun openMapPicker() {
         if (name.isBlank()) {
             errorMessage = "Ingresa un nombre primero"
             return
         }
-        if (addressText.isBlank()) {
-            errorMessage = "Ingresa una direccion"
-            return
-        }
         scope.launch {
             isResolving = true
-            val coords = geocodingProvider.geocode(addressText).getOrNull()
-            isResolving = false
-            if (coords == null) {
-                errorMessage = "No se encontro esa direccion"
+            val geocoded = if (addressText.isNotBlank()) {
+                geocodingProvider.geocode(addressText).getOrNull()
             } else {
-                errorMessage = null
-                confirmCoords = coords
+                null
             }
+            if (geocoded != null) {
+                isResolving = false
+                errorMessage = null
+                wasGeocoded = true
+                confirmCoords = geocoded
+                return@launch
+            }
+            // No address typed, or it couldn't be resolved — open the map
+            // anyway on a fallback center (current location if we can get
+            // one quickly, else the fixed point) rather than leaving the
+            // user stuck with no way to place a pin at all.
+            val fallback = locationProvider.getCurrentLocation().getOrNull()
+                ?: (FALLBACK_LAT to FALLBACK_LNG)
+            isResolving = false
+            errorMessage = if (addressText.isNotBlank()) "No se encontro esa direccion" else null
+            wasGeocoded = false
+            confirmCoords = fallback
         }
     }
 
@@ -361,6 +384,7 @@ private fun AddFavoriteDialog(
             result.fold(
                 onSuccess = { (lat, lng) ->
                     errorMessage = null
+                    wasGeocoded = true
                     confirmCoords = lat to lng
                 },
                 onFailure = { errorMessage = "No se pudo obtener tu ubicacion" },
@@ -395,13 +419,13 @@ private fun AddFavoriteDialog(
                     OutlinedTextField(
                         value = addressText,
                         onValueChange = { addressText = it },
-                        label = { Text("Direccion") },
+                        label = { Text("Direccion (opcional)") },
                         singleLine = true,
                         enabled = !isResolving,
                         trailingIcon = {
                             IconButton(
-                                onClick = { openConfirmFromAddress() },
-                                enabled = !isResolving && addressText.isNotBlank(),
+                                onClick = { openMapPicker() },
+                                enabled = !isResolving,
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.EditLocation,
@@ -442,7 +466,7 @@ private fun AddFavoriteDialog(
             label = name,
             initialLat = lat,
             initialLng = lng,
-            wasGeocoded = true,
+            wasGeocoded = wasGeocoded,
             onConfirm = { confirmedLat, confirmedLng ->
                 scope.launch {
                     isSaving = true
