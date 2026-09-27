@@ -9,8 +9,6 @@ import kotlinx.coroutines.flow.map
 
 private val Context.settingsDataStore by preferencesDataStore(name = "settings")
 
-// android#87 part 3 — lets the user turn off raw accelerometer/gyroscope
-// recording (android#77), which otherwise always ran during a trip.
 class SettingsDataStore(private val context: Context) {
 
     private val sensorRecordingEnabledKey = booleanPreferencesKey("sensor_recording_enabled")
