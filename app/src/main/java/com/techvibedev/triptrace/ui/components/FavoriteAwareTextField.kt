@@ -24,6 +24,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
 
@@ -36,11 +38,13 @@ import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
 // field, three callers, same behavior.
 //
 // The list renders as a plain inline Surface below the field, not a
-// DropdownMenu — DropdownMenu is built on Popup, and a Popup appearing
-// steals focus from whatever had it, which closes the soft keyboard the
-// instant a match appeared (or the instant one stopped matching while
-// still typing) and made typing while looking at suggestions unusable.
-// Inline content never touches focus, so the keyboard stays put.
+// DropdownMenu — DropdownMenu is built on Popup, which can steal focus
+// from whatever had it when it appears. That turned out not to be the
+// whole story though: the keyboard still dropped after switching to this
+// inline version, so the field also explicitly reclaims focus (below)
+// whenever the list's visibility changes while the user is mid-typing —
+// whatever transient thing is stealing it, forcing it back is a more
+// robust fix than chasing the exact mechanism.
 //
 // extraTrailingIcon is a slot for a caller-specific action placed before
 // the heart (Create trip uses it for "confirm on map") — kept generic here
@@ -56,10 +60,12 @@ fun FavoriteAwareTextField(
     modifier: Modifier = Modifier,
     extraTrailingIcon: (@Composable () -> Unit)? = null,
 ) {
+    val focusRequester = remember { FocusRequester() }
+
     // menuOpen is the one source of truth for whether the list shows —
     // deliberately not re-derived from focus state, which caused a real
-    // freeze bug (see the PR history on this file) even back when this
-    // still used DropdownMenu.
+    // freeze bug (see the PR history on this file) back when this used
+    // DropdownMenu.
     var menuOpen by remember { mutableStateOf(false) }
     // true = the heart forced the full list open; false = typing drove it.
     var showAllFavorites by remember { mutableStateOf(false) }
@@ -76,6 +82,18 @@ fun FavoriteAwareTextField(
     LaunchedEffect(value, favorites) {
         if (!showAllFavorites) {
             menuOpen = typeaheadMatches.isNotEmpty()
+        }
+    }
+
+    // Reclaims focus every time the list's visibility flips, but only for
+    // the typing-driven case — the heart's full list is meant to be
+    // browsed/picked from, not typed into, so it's fine (arguably correct)
+    // if that path lets the keyboard drop. requestFocus() on an
+    // already-focused field is a harmless no-op, so this doesn't need to
+    // check whether focus actually needs reclaiming first.
+    LaunchedEffect(menuOpen) {
+        if (!showAllFavorites) {
+            focusRequester.requestFocus()
         }
     }
 
@@ -127,7 +145,9 @@ fun FavoriteAwareTextField(
                     }
                 }
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester),
         )
         if (menuOpen && menuItems.isNotEmpty()) {
             Surface(
