@@ -94,14 +94,6 @@ class TripTrackingService : Service() {
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         createNotificationChannel()
 
-        // Checked once, here — not reactively for the rest of the service's
-        // life (android#87 part 3). Whatever the setting is when a trip's
-        // tracking starts is what applies for that whole trip; toggling it
-        // mid-trip only takes effect on the next one. Simpler than
-        // continuously collecting the Flow and dynamically registering/
-        // unregistering listeners, and matches how this setting is actually
-        // meant to be used — deciding ahead of time whether you want this
-        // trip's data for evaluation, not flipping it while driving.
         serviceScope.launch {
             val sensorRecordingEnabled = SettingsDataStore(applicationContext)
                 .sensorRecordingEnabledFlow
