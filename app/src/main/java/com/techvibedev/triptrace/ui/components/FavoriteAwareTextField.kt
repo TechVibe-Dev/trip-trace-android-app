@@ -2,19 +2,20 @@
 
 package com.techvibedev.triptrace.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,15 +24,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
 
 // A text field that offers the user's saved favorites (android#81) two
 // ways: typing something that matches a favorite's name opens the list of
 // matches on its own, and the heart icon opens the full list regardless of
-// what's typed. No matching text and no heart tap means no dropdown at
-// all — this isn't tied to focus (an earlier version was; see below for
-// why that changed). Used for origin, destination, and stops in Create
-// trip — one field, three callers, same behavior.
+// what's typed. No matching text and no heart tap means no list at all —
+// this isn't tied to focus (an earlier version was; see below for why that
+// changed). Used for origin, destination, and stops in Create trip — one
+// field, three callers, same behavior.
+//
+// The list renders as a plain inline Surface below the field, not a
+// DropdownMenu — DropdownMenu is built on Popup, and a Popup appearing
+// steals focus from whatever had it, which closes the soft keyboard the
+// instant a match appeared (or the instant one stopped matching while
+// still typing) and made typing while looking at suggestions unusable.
+// Inline content never touches focus, so the keyboard stays put.
 //
 // extraTrailingIcon is a slot for a caller-specific action placed before
 // the heart (Create trip uses it for "confirm on map") — kept generic here
@@ -47,21 +56,12 @@ fun FavoriteAwareTextField(
     modifier: Modifier = Modifier,
     extraTrailingIcon: (@Composable () -> Unit)? = null,
 ) {
-    // menuOpen is the one source of truth for whether the dropdown shows —
-    // deliberately NOT re-derived from focus state. An earlier version
-    // computed it as "focused AND has a match", which caused a real bug:
-    // DropdownMenu's own outside-tap dismiss fires while the field still
-    // reports itself focused (the tap gets consumed by the popup before it
-    // could move focus anywhere), so that formula recomputed straight back
-    // to true on the next frame — the menu re-opened itself the instant it
-    // closed, its scrim then ate every further tap, and nothing on screen
-    // (including the field itself) could be interacted with without force-
-    // closing the app. Tracking this explicitly, only closed by a real
-    // dismiss/selection, avoids the loop entirely.
+    // menuOpen is the one source of truth for whether the list shows —
+    // deliberately not re-derived from focus state, which caused a real
+    // freeze bug (see the PR history on this file) even back when this
+    // still used DropdownMenu.
     var menuOpen by remember { mutableStateOf(false) }
     // true = the heart forced the full list open; false = typing drove it.
-    // Kept separate from menuOpen so a dismiss can reset both without the
-    // two fighting over which list to show while open.
     var showAllFavorites by remember { mutableStateOf(false) }
 
     val typeaheadMatches = remember(value, favorites) {
@@ -129,15 +129,24 @@ fun FavoriteAwareTextField(
             },
             modifier = Modifier.fillMaxWidth(),
         )
-        DropdownMenu(
-            expanded = menuOpen,
-            onDismissRequest = { dismissMenu() },
-        ) {
-            menuItems.forEach { favorite ->
-                DropdownMenuItem(
-                    text = { Text(favorite.name) },
-                    onClick = { selectFavorite(favorite) },
-                )
+        if (menuOpen && menuItems.isNotEmpty()) {
+            Surface(
+                tonalElevation = 3.dp,
+                shadowElevation = 3.dp,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column {
+                    menuItems.forEach { favorite ->
+                        Text(
+                            text = favorite.name,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = enabled) { selectFavorite(favorite) }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    }
+                }
             }
         }
     }
