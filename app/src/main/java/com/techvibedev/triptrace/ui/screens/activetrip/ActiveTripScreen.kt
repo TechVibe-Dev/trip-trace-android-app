@@ -84,8 +84,8 @@ data class TripStop(
 )
 
 // GpsPoint.speed is stored in m/s (Android's Location.getSpeed() unit) —
-// same conversion applied server-side in trip-trace-api#41, needed again
-// here since this reads Room directly and never goes through the API.
+// same conversion applied server-side, needed again here since this reads
+// Room directly and never goes through the API.
 private const val MS_TO_KMH = 3.6
 
 // How often, while a trip is in progress, we (a) upload any GPS points Room
@@ -93,12 +93,12 @@ private const val MS_TO_KMH = 3.6
 // progress from the API. Chosen as a balance: frequent enough that the
 // screen feels live, infrequent enough not to hammer Google Routes (each
 // recalculate-eta is a billable-ish call, see routing_service.py) or the
-// device's radio/battery. Matches the interval agreed on with api#7.
+// device's radio/battery.
 private const val POLL_INTERVAL_MS = 30_000L
 
-// android#78 — same 100m radius trip-trace-api's stop_detection_service
-// already uses server-side to mark a stop reached, for consistency between
-// what the server considers "arrived" and what this screen prompts about.
+// Same 100m radius the API already uses server-side to mark a stop
+// reached, for consistency between what the server considers "arrived" and
+// what this screen prompts about.
 private const val ARRIVAL_THRESHOLD_METERS = 100.0
 
 // Floating cards sit on top of a full-screen map (agreed design: the map is
@@ -134,22 +134,20 @@ fun ActiveTripScreen(
     var stops by remember { mutableStateOf<List<StopResponse>>(emptyList()) }
     var isEnding by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    // android#78: confirmation before the manual "Finalizar viaje" button
-    // actually ends the trip, so a misclick doesn't close it out by
-    // accident.
+    // Confirmation before the manual "Finalizar viaje" button actually ends
+    // the trip, so a misclick doesn't close it out by accident.
     var showEndTripConfirmDialog by remember { mutableStateOf(false) }
-    // android#78: prompts once, automatically, on getting within
-    // ARRIVAL_THRESHOLD_METERS of the destination — not a hard auto-finish,
-    // since the trip genuinely might continue past this point (a stop just
-    // short of the actual destination, or the user driving further for
-    // some other reason) or the user might want to linger before ending it.
-    // Deliberately fire-once per screen session via hasPromptedArrival:
-    // sitting right at the destination would otherwise re-trigger on every
-    // new point for as long as the trip stays open. If dismissed with
-    // "Seguir viaje", it does not ask again — the manual button (with its
-    // own new confirmation above) is still right there whenever the user
-    // does want to finish, covering both "kept driving" and "never really
-    // arrives" from the issue.
+    // Prompts once, automatically, on getting within ARRIVAL_THRESHOLD_METERS
+    // of the destination — not a hard auto-finish, since the trip genuinely
+    // might continue past this point (a stop just short of the actual
+    // destination, or the user driving further for some other reason) or
+    // the user might want to linger before ending it. Deliberately
+    // fire-once per screen session via hasPromptedArrival: sitting right at
+    // the destination would otherwise re-trigger on every new point for as
+    // long as the trip stays open. If dismissed with "Seguir viaje", it
+    // does not ask again — the manual button (with its own new
+    // confirmation above) is still right there whenever the user does want
+    // to finish, covering both "kept driving" and "never really arrives".
     var hasPromptedArrival by remember { mutableStateOf(false) }
     var showArrivalDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -224,7 +222,7 @@ fun ActiveTripScreen(
         }
     }
 
-    // android#78 — checked on every new point (roughly every 3s, matching
+    // Checked on every new point (roughly every 3s, matching
     // TripTrackingService's recording interval) against the trip's
     // destination. Only runs while this screen is actually composed (i.e.
     // in the foreground); with the screen off or the app backgrounded, GPS
@@ -527,8 +525,8 @@ private fun TripResponse.toEntity(syncedAt: String): TripEntity {
 }
 
 // actual_arrival_at is set server-side once a synced GPS point lands within
-// 100m of the stop (trip-trace-api's stop_detection_service) — this is a
-// pure display mapping, no client-side proximity logic.
+// 100m of the stop — this is a pure display mapping, no client-side
+// proximity logic.
 private fun StopResponse.toTripStop(): TripStop {
     return TripStop(
         label = name ?: "Parada",
@@ -537,10 +535,8 @@ private fun StopResponse.toTripStop(): TripStop {
     )
 }
 
-// Standard great-circle distance, same formula the analysis scripts used
-// this session for the sensor/GPS work — no equivalent existed yet in the
-// Android app itself (server-side stop detection does its own version in
-// Python).
+// Standard great-circle distance — no equivalent existed yet in the Android
+// app itself (server-side stop detection does its own version in Python).
 private fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
     val earthRadiusMeters = 6_371_000.0
     val dLat = Math.toRadians(lat2 - lat1)
@@ -637,10 +633,10 @@ private fun LiveRouteMap(
     val points by gpsPointDao.observeAllByTripId(tripId).collectAsState(initial = emptyList())
     val cameraPositionState = rememberCameraPositionState()
     var hasCenteredOnce by remember { mutableStateOf(false) }
-    // Dark map style (android#68) — Google's default palette is light and
-    // clashes with the rest of the (dark-themed) app. loadRawResourceStyle
-    // just parses JSON, no dependency on the Maps system being initialized
-    // (unlike BitmapDescriptorFactory below), so this is safe to build
+    // Dark map style — Google's default palette is light and clashes with
+    // the rest of the (dark-themed) app. loadRawResourceStyle just parses
+    // JSON, no dependency on the Maps system being initialized (unlike
+    // BitmapDescriptorFactory below), so this is safe to build
     // unconditionally here.
     val mapProperties = remember {
         MapProperties(mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark))
