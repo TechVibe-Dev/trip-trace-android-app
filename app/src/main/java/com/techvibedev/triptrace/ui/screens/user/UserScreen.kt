@@ -39,6 +39,9 @@ import com.techvibedev.triptrace.data.session.SettingsDataStore
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
+// Profile display + logout. The sensor-recording toggle lands here too, as
+// a separate section, once its own groundwork (a local DataStore setting)
+// is in place.
 @Composable
 fun UserScreen(
     authRepository: AuthRepository,
