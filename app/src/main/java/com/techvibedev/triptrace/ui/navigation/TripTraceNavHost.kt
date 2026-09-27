@@ -23,6 +23,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.techvibedev.triptrace.data.network.RetrofitClient
 import com.techvibedev.triptrace.data.repository.AuthRepository
+import com.techvibedev.triptrace.data.repository.FavoritePlaceRepository
 import com.techvibedev.triptrace.data.repository.TripRepository
 import com.techvibedev.triptrace.data.session.TokenDataStore
 import com.techvibedev.triptrace.ui.components.TripTraceBottomNavBar
@@ -41,6 +42,9 @@ fun TripTraceNavHost(navController: NavHostController = rememberNavController())
     val tokenDataStore = remember { TokenDataStore(context.applicationContext) }
     val authRepository = remember { AuthRepository(RetrofitClient.authApiService, tokenDataStore) }
     val tripRepository = remember { TripRepository(RetrofitClient.tripApiService, tokenDataStore) }
+    val favoritePlaceRepository = remember {
+        FavoritePlaceRepository(RetrofitClient.favoritePlaceApiService, tokenDataStore)
+    }
     // null while DataStore hasn't emitted yet (checking for a saved session).
     val isLoggedIn by authRepository.isLoggedIn.collectAsState(initial = null)
 
@@ -111,6 +115,7 @@ fun TripTraceNavHost(navController: NavHostController = rememberNavController())
             composable(Routes.USER) {
                 UserScreen(
                     authRepository = authRepository,
+                    favoritePlaceRepository = favoritePlaceRepository,
                     onLoggedOut = {
                         navController.navigate(Routes.LOGIN) {
                             popUpTo(0) { inclusive = true }
@@ -121,6 +126,7 @@ fun TripTraceNavHost(navController: NavHostController = rememberNavController())
             composable(Routes.CREATE_TRIP) {
                 CreateTripScreen(
                     tripRepository = tripRepository,
+                    favoritePlaceRepository = favoritePlaceRepository,
                     onTripSaved = {
                         navController.navigate(Routes.TRIPS) {
                             popUpTo(Routes.TRIPS) { inclusive = true }
