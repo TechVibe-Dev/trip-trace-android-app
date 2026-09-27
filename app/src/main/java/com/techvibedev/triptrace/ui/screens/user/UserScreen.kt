@@ -10,10 +10,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.EditLocation
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -33,18 +39,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
 import com.techvibedev.triptrace.data.model.UserResponse
 import com.techvibedev.triptrace.data.repository.AuthRepository
+import com.techvibedev.triptrace.data.repository.FavoritePlaceRepository
 import com.techvibedev.triptrace.data.session.SettingsDataStore
+import com.techvibedev.triptrace.location.GeocodingProvider
+import com.techvibedev.triptrace.location.LocationProvider
+import com.techvibedev.triptrace.ui.components.LocationConfirmDialog
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
-// Profile display + logout. The sensor-recording toggle lands here too, as
-// a separate section, once its own groundwork (a local DataStore setting)
-// is in place.
+// Profile display + logout. The sensor-recording toggle and favorites
+// management live here too, as separate sections.
 @Composable
 fun UserScreen(
     authRepository: AuthRepository,
+    favoritePlaceRepository: FavoritePlaceRepository,
     onLoggedOut: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -55,7 +66,16 @@ fun UserScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isLoggingOut by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
+    var favorites by remember { mutableStateOf<List<FavoritePlaceResponse>>(emptyList()) }
+    var isLoadingFavorites by remember { mutableStateOf(true) }
+    var showAddFavoriteDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    suspend fun reloadFavorites() {
+        isLoadingFavorites = true
+        favoritePlaceRepository.list().onSuccess { favorites = it }
+        isLoadingFavorites = false
+    }
 
     LaunchedEffect(Unit) {
         isLoading = true
@@ -67,6 +87,7 @@ fun UserScreen(
             onFailure = { errorMessage = "No se pudo cargar tu perfil." },
         )
         isLoading = false
+        reloadFavorites()
     }
 
     Column(
@@ -98,6 +119,20 @@ fun UserScreen(
                 ProfileCard(user = user!!)
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        FavoritesCard(
+            favorites = favorites,
+            isLoading = isLoadingFavorites,
+            onAddClick = { showAddFavoriteDialog = true },
+            onDeleteClick = { favorite ->
+                scope.launch {
+                    favoritePlaceRepository.delete(favorite.id)
+                    reloadFavorites()
+                }
+            },
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -149,6 +184,17 @@ fun UserScreen(
             },
         )
     }
+
+    if (showAddFavoriteDialog) {
+        AddFavoriteDialog(
+            favoritePlaceRepository = favoritePlaceRepository,
+            onDismiss = { showAddFavoriteDialog = false },
+            onSaved = {
+                showAddFavoriteDialog = false
+                scope.launch { reloadFavorites() }
+            },
+        )
+    }
 }
 
 @Composable
@@ -180,6 +226,238 @@ private fun ProfileRow(label: String, value: String) {
         Text(
             text = value,
             style = MaterialTheme.typography.bodyLarge,
+        )
+    }
+}
+
+// User-curated places (android#81) — one list, usable for a trip's origin,
+// destination, or any stop (see CreateTripScreen). Management (add/delete)
+// lives here in Perfil; picking one happens on Create trip.
+@Composable
+private fun FavoritesCard(
+    favorites: List<FavoritePlaceResponse>,
+    isLoading: Boolean,
+    onAddClick: () -> Unit,
+    onDeleteClick: (FavoritePlaceResponse) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Favoritos",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                IconButton(onClick = onAddClick) {
+                    Icon(imageVector = Icons.Filled.Add, contentDescription = "Agregar favorito")
+                }
+            }
+            when {
+                isLoading -> {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.padding(8.dp))
+                    }
+                }
+                favorites.isEmpty() -> {
+                    Text(
+                        text = "Todavia no tenes favoritos guardados.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                else -> {
+                    favorites.forEach { favorite ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = favorite.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            IconButton(onClick = { onDeleteClick(favorite) }) {
+                                Icon(
+                                    imageVector = Icons.Filled.DeleteOutline,
+                                    contentDescription = "Borrar favorito \"${favorite.name}\"",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Two ways to set the favorite's point, same as Create trip: type an
+// address (geocode → confirm/adjust the pin), or use the current GPS
+// location — both funnel into the same LocationConfirmDialog, so the user
+// always gets a chance to adjust before saving. "Casa"/"Trabajo" are
+// pre-defined name suggestions, not fixed slots — tapping one just fills
+// the name field, same as typing it by hand.
+//
+// Mutually exclusive with the location-confirm step, rather than stacked:
+// showing both AlertDialog and LocationConfirmDialog at once would be two
+// separate dialog surfaces overlapping. Canceling the confirm step returns
+// to this form with name/address preserved.
+@Composable
+private fun AddFavoriteDialog(
+    favoritePlaceRepository: FavoritePlaceRepository,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    val context = LocalContext.current
+    val geocodingProvider = remember { GeocodingProvider(context.applicationContext) }
+    val locationProvider = remember { LocationProvider(context.applicationContext) }
+    val scope = rememberCoroutineScope()
+
+    var name by remember { mutableStateOf("") }
+    var addressText by remember { mutableStateOf("") }
+    var isResolving by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var confirmCoords by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+
+    fun openConfirmFromAddress() {
+        if (name.isBlank()) {
+            errorMessage = "Ingresa un nombre primero"
+            return
+        }
+        if (addressText.isBlank()) {
+            errorMessage = "Ingresa una direccion"
+            return
+        }
+        scope.launch {
+            isResolving = true
+            val coords = geocodingProvider.geocode(addressText).getOrNull()
+            isResolving = false
+            if (coords == null) {
+                errorMessage = "No se encontro esa direccion"
+            } else {
+                errorMessage = null
+                confirmCoords = coords
+            }
+        }
+    }
+
+    fun openConfirmFromCurrentLocation() {
+        if (name.isBlank()) {
+            errorMessage = "Ingresa un nombre primero"
+            return
+        }
+        scope.launch {
+            isResolving = true
+            val result = locationProvider.getCurrentLocation()
+            isResolving = false
+            result.fold(
+                onSuccess = { (lat, lng) ->
+                    errorMessage = null
+                    confirmCoords = lat to lng
+                },
+                onFailure = { errorMessage = "No se pudo obtener tu ubicacion" },
+            )
+        }
+    }
+
+    if (confirmCoords == null) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Agregar favorito") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Nombre") },
+                        singleLine = true,
+                        enabled = !isResolving,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { name = "Casa" }, enabled = !isResolving) {
+                            Text("Casa")
+                        }
+                        TextButton(onClick = { name = "Trabajo" }, enabled = !isResolving) {
+                            Text("Trabajo")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = addressText,
+                        onValueChange = { addressText = it },
+                        label = { Text("Direccion") },
+                        singleLine = true,
+                        enabled = !isResolving,
+                        trailingIcon = {
+                            IconButton(
+                                onClick = { openConfirmFromAddress() },
+                                enabled = !isResolving && addressText.isNotBlank(),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.EditLocation,
+                                    contentDescription = "Elegir en el mapa",
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(onClick = { openConfirmFromCurrentLocation() }, enabled = !isResolving) {
+                        Text("Usar mi ubicacion actual")
+                    }
+                    errorMessage?.let { message ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    if (isResolving) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        CircularProgressIndicator(modifier = Modifier.height(16.dp), strokeWidth = 2.dp)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = onDismiss, enabled = !isResolving) {
+                    Text("Cancelar")
+                }
+            },
+        )
+    } else {
+        val (lat, lng) = confirmCoords!!
+        LocationConfirmDialog(
+            label = name,
+            initialLat = lat,
+            initialLng = lng,
+            wasGeocoded = true,
+            onConfirm = { confirmedLat, confirmedLng ->
+                scope.launch {
+                    isSaving = true
+                    val result = favoritePlaceRepository.create(name, confirmedLat, confirmedLng)
+                    isSaving = false
+                    result.fold(
+                        onSuccess = { onSaved() },
+                        onFailure = {
+                            errorMessage = "No se pudo guardar el favorito"
+                            confirmCoords = null
+                        },
+                    )
+                }
+            },
+            onDismiss = { confirmCoords = null },
         )
     }
 }
