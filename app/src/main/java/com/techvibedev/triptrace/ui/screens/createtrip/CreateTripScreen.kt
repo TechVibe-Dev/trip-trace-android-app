@@ -91,8 +91,8 @@ private const val LOG_TAG = "CreateTripScreen"
 
 // A stop as entered here — name is always required; confirmedLat/Lng are
 // set only if the user opened the map-confirm dialog for this stop and
-// dragged the pin (android#73). Both null means "not confirmed yet, resolve
-// by geocoding the name at save time" — the same as before this feature
+// dragged the pin. Both null means "not confirmed yet, resolve by
+// geocoding the name at save time" — the same as before this feature
 // existed, so typing a stop and saving without ever touching the map still
 // works exactly as it did.
 private data class StopDraft(
@@ -285,12 +285,12 @@ fun CreateTripScreen(
         errorMessage = null
         isSaving = true
         scope.launch {
-            // Use the map-confirmed point if there is one (android#73) —
-            // otherwise fall back to geocoding the text, same as before
-            // this feature existed. Confirming on the map is optional, not
-            // a required step — unless geocoding fails outright, in which
-            // case there's no other way to resolve a point, so the map
-            // opens automatically instead of just leaving the user stuck.
+            // Use the map-confirmed point if there is one — otherwise fall
+            // back to geocoding the text, same as before this feature
+            // existed. Confirming on the map is optional, not a required
+            // step — unless geocoding fails outright, in which case
+            // there's no other way to resolve a point, so the map opens
+            // automatically instead of just leaving the user stuck.
             val destinationCoordsResolved = destinationCoords
                 ?: geocodingProvider.geocode(destination).getOrNull()
             if (destinationCoordsResolved == null) {
@@ -340,8 +340,8 @@ fun CreateTripScreen(
             // comes from real GPS, not typed text, so a failure here is
             // more likely a transient network/service hiccup than "this
             // place doesn't exist". Not worth blocking a valid save just to
-            // give the origin a nicer name (android#69) — falls back to the
-            // previous fixed text silently.
+            // give the origin a nicer name — falls back to the previous
+            // fixed text silently.
             val originName = if (useCurrentLocation) {
                 geocodingProvider.reverseGeocode(originLat, originLng).getOrDefault("Ubicacion actual")
             } else {
@@ -498,10 +498,10 @@ fun CreateTripScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // android#59 — these were plain free-text fields ("18:30" typed by
-        // hand), easy to mistype with no feedback until save silently
-        // dropped an unparseable value. A native time picker removes that
-        // failure mode entirely — every value it can produce is valid.
+        // These were plain free-text fields ("18:30" typed by hand), easy
+        // to mistype with no feedback until save silently dropped an
+        // unparseable value. A native time picker removes that failure
+        // mode entirely — every value it can produce is valid.
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -668,10 +668,10 @@ private fun StopRow(
 }
 
 // A read-only field that opens a native TimePicker dialog on tap, instead
-// of accepting freeform text (android#59) — every value it can produce is
-// already a valid "HH:mm", so timeTextToIso() below never has to reject a
-// typo. onClear is only passed for the optional field (desired arrival);
-// the departure field is always required, so it has nothing to clear to.
+// of accepting freeform text — every value it can produce is already a
+// valid "HH:mm", so timeTextToIso() below never has to reject a typo.
+// onClear is only passed for the optional field (desired arrival); the
+// departure field is always required, so it has nothing to clear to.
 @Composable
 private fun TimePickerField(
     label: String,
@@ -755,9 +755,9 @@ private fun TimePickerDialog(
 }
 
 // Lets the user see where a typed address actually geocoded to, and drag
-// the pin to correct it if it's off (android#73) — the core gap this issue
-// was about: geocoding happened "blind" before, with no way to see or fix
-// a wrong result. Confirming here is optional; saving without ever opening
+// the pin to correct it if it's off — the core gap this dialog exists to
+// close: geocoding happened "blind" before, with no way to see or fix a
+// wrong result. Confirming here is optional; saving without ever opening
 // this dialog still works exactly as before, resolving via geocoding at
 // save time. Used for both the destination and any stop, distinguished by
 // the caller via `label` and where the confirmed point gets stored.
@@ -775,9 +775,9 @@ private fun LocationConfirmDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    // Dark map style (android#68), consistent with every other map in the
-    // app. Remembered so it's parsed once, not on every recomposition
-    // while the marker is being dragged.
+    // Dark map style, consistent with every other map in the app.
+    // Remembered so it's parsed once, not on every recomposition while the
+    // marker is being dragged.
     val mapProperties = remember {
         MapProperties(mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark))
     }
