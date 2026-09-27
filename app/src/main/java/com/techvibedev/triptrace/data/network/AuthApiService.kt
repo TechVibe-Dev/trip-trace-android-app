@@ -1,5 +1,6 @@
 package com.techvibedev.triptrace.data.network
 
+import com.techvibedev.triptrace.data.model.PasswordChangeRequest
 import com.techvibedev.triptrace.data.model.RegisterRequest
 import com.techvibedev.triptrace.data.model.TokenResponse
 import com.techvibedev.triptrace.data.model.UserResponse
@@ -19,9 +20,9 @@ interface AuthApiService {
 
     // /login expects OAuth2PasswordRequestForm (form-urlencoded), not JSON —
     // "username" is the field name FastAPI uses per the OAuth2 spec. The API
-    // now accepts either the user's actual username or their email there
-    // (trip-trace-api#57, android#83), hence "identifier" as the Kotlin
-    // param name instead of the old "email".
+    // now accepts either the user's actual username or their email there,
+    // hence "identifier" as the Kotlin param name instead of the old
+    // "email".
     @FormUrlEncoded
     @POST("api/v1/auth/login")
     suspend fun login(
@@ -37,4 +38,13 @@ interface AuthApiService {
         @Header("Authorization") bearerToken: String,
         @Body request: UserUpdateRequest,
     ): UserResponse
+
+    // Separate endpoint from updateMe — requires current_password since a
+    // valid session alone doesn't prove the caller still knows the
+    // password.
+    @PUT("api/v1/auth/me/password")
+    suspend fun changePassword(
+        @Header("Authorization") bearerToken: String,
+        @Body request: PasswordChangeRequest,
+    )
 }
