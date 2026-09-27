@@ -93,6 +93,10 @@ android {
 
     buildFeatures {
         compose = true
+        // Needed for BuildConfig.DEBUG, used to gate the network logging
+        // level (see RetrofitClient) — AGP 8.x no longer generates
+        // BuildConfig by default.
+        buildConfig = true
     }
 }
 
