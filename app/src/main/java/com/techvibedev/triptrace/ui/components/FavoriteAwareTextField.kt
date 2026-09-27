@@ -2,6 +2,7 @@
 
 package com.techvibedev.triptrace.ui.components
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
@@ -103,9 +104,4 @@ fun FavoriteAwareTextField(
             }
         }
     }
-}
-
-@Composable
-private fun Column(content: @Composable () -> Unit) {
-    androidx.compose.foundation.layout.Column(content = content)
 }
