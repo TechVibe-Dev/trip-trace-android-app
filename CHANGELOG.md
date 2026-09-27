@@ -7,6 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Android Auto, phase 1 (plumbing only): the app now declares Car App Library support and shows a placeholder screen on the car's display, to prove the connection works before building any real screen on top. Nothing functional yet — see the issue for the rest of the plan.
 - Active trip: tapping "Finalizar viaje" now asks for confirmation first, so a misclick doesn't end the trip by accident. Also added an automatic prompt when getting within 100m of the destination (same radius the API already uses server-side for stop detection) — fires once per screen session, not on a hard timer, and never repeats once dismissed; declining just leaves the trip running, still endable anytime via the same button. Only runs while this screen is in the foreground — a background/notification-based version for when the screen is off is a reasonable follow-up, not included here. Closes `android#78`.
 - Create trip: "Hora de salida" and "Quiero llegar" are now a native time picker instead of free-text fields — every value it can produce is already valid, removing the old failure mode where a typo silently got dropped at save time with no feedback. Closes `android#59`.
 - Added a toggle to the Perfil tab to turn raw sensor recording (`android#77`) on/off — previously it always ran during a trip. Checked once when a trip's tracking starts, so flipping it mid-trip only takes effect on the next one, not the one already running. Closes `android#87`.
