@@ -25,4 +25,7 @@ object RetrofitClient {
 
     val authApiService: AuthApiService by lazy { retrofit.create(AuthApiService::class.java) }
     val tripApiService: TripApiService by lazy { retrofit.create(TripApiService::class.java) }
+    val favoritePlaceApiService: FavoritePlaceApiService by lazy {
+        retrofit.create(FavoritePlaceApiService::class.java)
+    }
 }
