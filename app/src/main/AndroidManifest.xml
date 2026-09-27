@@ -20,6 +20,16 @@
             android:name="com.google.android.geo.API_KEY"
             android:value="${mapsApiKey}" />
 
+        <!-- Declares the Car App Library capabilities this app uses (see
+             automotive_app_desc.xml) — required for Android Auto to
+             discover and bind to TripTraceCarAppService below. -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -34,6 +44,20 @@
             android:name=".service.TripTrackingService"
             android:foregroundServiceType="location"
             android:exported="false" />
+
+        <!-- android#93 phase 1 — entry point Android Auto binds to.
+             NAVIGATION matches the app's actual purpose; that category
+             requires Google's approval only for public Play distribution,
+             not for personal sideloading via Android Auto's "unknown
+             sources" developer setting. -->
+        <service
+            android:name=".car.TripTraceCarAppService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.NAVIGATION" />
+            </intent-filter>
+        </service>
 
     </application>
 

@@ -126,6 +126,12 @@ dependencies {
     // declared explicitly here, matching what 3.0.0 itself was built/tested
     // against.
     implementation(libs.play.services.maps)
+
+    // Android Auto (Car App Library) — phase 1 of android#93. Base artifact
+    // only for now (androidx.car.app:app); no need yet for app-projected
+    // (extra Auto-specific APIs) or app-automotive (a different platform,
+    // full in-car OS, out of scope — see the issue's plan).
+    implementation(libs.androidx.car.app)
 }
 
 // maps-compose pulls in androidx.core:core-ktx/core transitively at a
