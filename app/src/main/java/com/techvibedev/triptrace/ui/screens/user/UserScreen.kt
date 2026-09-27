@@ -55,7 +55,6 @@ fun UserScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isLoggingOut by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
-    var passwordChangedMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
@@ -107,22 +106,10 @@ fun UserScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedButton(
-            onClick = {
-                passwordChangedMessage = null
-                showChangePasswordDialog = true
-            },
+            onClick = { showChangePasswordDialog = true },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Cambiar contrasena")
-        }
-
-        passwordChangedMessage?.let { message ->
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            Text("Cambiar contraseña")
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -139,7 +126,7 @@ fun UserScreen(
             enabled = !isLoggingOut,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Cerrar sesion")
+            Text("Cerrar sesión")
         }
     }
 
@@ -147,9 +134,18 @@ fun UserScreen(
         ChangePasswordDialog(
             authRepository = authRepository,
             onDismiss = { showChangePasswordDialog = false },
+            // Changing the password invalidates every existing token for
+            // this account, including the one this very session is using
+            // (trip-trace-api's change-password endpoint has no per-device
+            // concept to spare it) — so the local token is now stale too.
+            // Clearing it and navigating to Login here, right after a
+            // successful change, avoids the alternative: staying on a
+            // now-broken session where every screen fails with a generic
+            // error until the user finds "Cerrar sesion" themselves.
             onChanged = {
                 showChangePasswordDialog = false
-                passwordChangedMessage = "Contrasena actualizada."
+                authRepository.logout()
+                onLoggedOut()
             },
         )
     }
@@ -214,8 +210,8 @@ private fun SensorRecordingCard(settingsDataStore: SettingsDataStore) {
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(
-                    text = "Acelerometro y giroscopio durante el viaje, para evaluar mejoras " +
-                        "futuras. No se envian al servidor.",
+                    text = "Acelerómetro y giroscopio durante el viaje, para evaluar mejoras " +
+                        "futuras. No se envían al servidor.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -234,12 +230,13 @@ private fun SensorRecordingCard(settingsDataStore: SettingsDataStore) {
 // current_password is required by the API itself (see that endpoint's own
 // reasoning) — this dialog just collects it alongside the new password,
 // with the new/confirm match checked locally before ever calling the
-// network.
+// network. onChanged is suspend so it can log the (now-stale) local session
+// out as part of the same coroutine, right after the API call succeeds.
 @Composable
 private fun ChangePasswordDialog(
     authRepository: AuthRepository,
     onDismiss: () -> Unit,
-    onChanged: () -> Unit,
+    onChanged: suspend () -> Unit,
 ) {
     var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
@@ -250,7 +247,7 @@ private fun ChangePasswordDialog(
 
     fun submit() {
         if (newPassword != confirmPassword) {
-            errorMessage = "Las contrasenas nuevas no coinciden"
+            errorMessage = "Las contraseñas nuevas no coinciden"
             return
         }
         if (currentPassword.isBlank() || newPassword.isBlank()) {
@@ -270,9 +267,9 @@ private fun ChangePasswordDialog(
                     // generic message instead of implying the password
                     // itself was wrong.
                     errorMessage = if (exception is HttpException && exception.code() == 400) {
-                        "La contrasena actual es incorrecta"
+                        "La contraseña actual es incorrecta"
                     } else {
-                        "No se pudo cambiar la contrasena, intenta de nuevo"
+                        "No se pudo cambiar la contraseña, intenta de nuevo"
                     }
                 },
             )
@@ -281,13 +278,13 @@ private fun ChangePasswordDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Cambiar contrasena") },
+        title = { Text("Cambiar contraseña") },
         text = {
             Column {
                 OutlinedTextField(
                     value = currentPassword,
                     onValueChange = { currentPassword = it },
-                    label = { Text("Contrasena actual") },
+                    label = { Text("Contraseña actual") },
                     singleLine = true,
                     enabled = !isSubmitting,
                     visualTransformation = PasswordVisualTransformation(),
@@ -297,7 +294,7 @@ private fun ChangePasswordDialog(
                 OutlinedTextField(
                     value = newPassword,
                     onValueChange = { newPassword = it },
-                    label = { Text("Contrasena nueva") },
+                    label = { Text("Contraseña nueva") },
                     singleLine = true,
                     enabled = !isSubmitting,
                     visualTransformation = PasswordVisualTransformation(),
@@ -307,7 +304,7 @@ private fun ChangePasswordDialog(
                 OutlinedTextField(
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it },
-                    label = { Text("Confirmar contrasena nueva") },
+                    label = { Text("Confirmar contraseña nueva") },
                     singleLine = true,
                     enabled = !isSubmitting,
                     visualTransformation = PasswordVisualTransformation(),
