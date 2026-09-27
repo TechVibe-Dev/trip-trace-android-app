@@ -17,19 +17,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
 
 // A text field that offers the user's saved favorites (android#81) two
-// ways: typing filters the list live (shown under the field while it has
-// focus), and the heart icon opens the full list regardless of what's
-// typed, or even with the field empty. Used for origin, destination, and
-// stops in Create trip — one field, three callers, same behavior.
+// ways: typing something that matches a favorite's name opens the list of
+// matches on its own, and the heart icon opens the full list regardless of
+// what's typed. No matching text and no heart tap means no dropdown at
+// all — this isn't tied to focus (an earlier version was; see below for
+// why that changed). Used for origin, destination, and stops in Create
+// trip — one field, three callers, same behavior.
 //
 // extraTrailingIcon is a slot for a caller-specific action placed before
 // the heart (Create trip uses it for "confirm on map") — kept generic here
@@ -45,24 +47,54 @@ fun FavoriteAwareTextField(
     modifier: Modifier = Modifier,
     extraTrailingIcon: (@Composable () -> Unit)? = null,
 ) {
-    var isFocused by remember { mutableStateOf(false) }
-    // Separate from typeahead — the heart forces the full list open even
-    // with no text and no focus-driven match, e.g. tapping it as the very
-    // first action on an empty field.
+    // menuOpen is the one source of truth for whether the dropdown shows —
+    // deliberately NOT re-derived from focus state. An earlier version
+    // computed it as "focused AND has a match", which caused a real bug:
+    // DropdownMenu's own outside-tap dismiss fires while the field still
+    // reports itself focused (the tap gets consumed by the popup before it
+    // could move focus anywhere), so that formula recomputed straight back
+    // to true on the next frame — the menu re-opened itself the instant it
+    // closed, its scrim then ate every further tap, and nothing on screen
+    // (including the field itself) could be interacted with without force-
+    // closing the app. Tracking this explicitly, only closed by a real
+    // dismiss/selection, avoids the loop entirely.
+    var menuOpen by remember { mutableStateOf(false) }
+    // true = the heart forced the full list open; false = typing drove it.
+    // Kept separate from menuOpen so a dismiss can reset both without the
+    // two fighting over which list to show while open.
     var showAllFavorites by remember { mutableStateOf(false) }
 
     val typeaheadMatches = remember(value, favorites) {
-        if (value.isBlank()) favorites else favorites.filter { it.name.contains(value, ignoreCase = true) }
+        if (value.isBlank()) emptyList() else favorites.filter { it.name.contains(value, ignoreCase = true) }
     }
     val menuItems = if (showAllFavorites) favorites else typeaheadMatches
-    val expanded = (showAllFavorites || (isFocused && typeaheadMatches.isNotEmpty())) && menuItems.isNotEmpty()
 
-    fun selectFavorite(favorite: FavoritePlaceResponse) {
-        onFavoriteSelected(favorite)
+    // Reacts only to the text actually changing — opens the moment typing
+    // produces a match, closes the moment it stops matching (cleared the
+    // field, or kept typing past it). Skipped while the heart's full list
+    // is showing, so typing during that doesn't fight it closed.
+    LaunchedEffect(value, favorites) {
+        if (!showAllFavorites) {
+            menuOpen = typeaheadMatches.isNotEmpty()
+        }
+    }
+
+    fun dismissMenu() {
+        menuOpen = false
         showAllFavorites = false
     }
 
-    Column {
+    fun selectFavorite(favorite: FavoritePlaceResponse) {
+        onFavoriteSelected(favorite)
+        dismissMenu()
+    }
+
+    // modifier applied to this Column, not directly to the OutlinedTextField
+    // below — a caller passing Modifier.weight(1f) from inside a Row (the
+    // "Agregar parada" row does) needs that weight on the field's actual
+    // direct child in the Row, which is this Column, not a grandchild two
+    // levels down. Weight silently does nothing useful applied that deep.
+    Column(modifier = modifier) {
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
@@ -73,7 +105,14 @@ fun FavoriteAwareTextField(
                 Row {
                     extraTrailingIcon?.invoke()
                     IconButton(
-                        onClick = { showAllFavorites = !showAllFavorites },
+                        onClick = {
+                            if (menuOpen && showAllFavorites) {
+                                dismissMenu()
+                            } else {
+                                showAllFavorites = true
+                                menuOpen = true
+                            }
+                        },
                         enabled = enabled,
                     ) {
                         Icon(
@@ -88,13 +127,11 @@ fun FavoriteAwareTextField(
                     }
                 }
             },
-            modifier = modifier
-                .fillMaxWidth()
-                .onFocusChanged { focusState -> isFocused = focusState.isFocused },
+            modifier = Modifier.fillMaxWidth(),
         )
         DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { showAllFavorites = false },
+            expanded = menuOpen,
+            onDismissRequest = { dismissMenu() },
         ) {
             menuItems.forEach { favorite ->
                 DropdownMenuItem(
