@@ -33,9 +33,9 @@ import com.techvibedev.triptrace.data.repository.AuthRepository
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
-// First piece of android#87 — profile display + logout. The
-// sensor-recording toggle lands here too, as a separate section, once its
-// own groundwork (a local DataStore setting) is in place.
+// Profile display + logout. The sensor-recording toggle lands here too, as
+// a separate section, once its own groundwork (a local DataStore setting)
+// is in place.
 @Composable
 fun UserScreen(
     authRepository: AuthRepository,
@@ -175,10 +175,10 @@ private fun ProfileRow(label: String, value: String) {
     }
 }
 
-// trip-trace-api#60 / android#87 part 2. current_password is required by
-// the API itself (see that PR's reasoning) — this dialog just collects it
-// alongside the new password, with the new/confirm match checked locally
-// before ever calling the network.
+// current_password is required by the API itself (see that endpoint's own
+// reasoning) — this dialog just collects it alongside the new password,
+// with the new/confirm match checked locally before ever calling the
+// network.
 @Composable
 private fun ChangePasswordDialog(
     authRepository: AuthRepository,
@@ -210,9 +210,9 @@ private fun ChangePasswordDialog(
                 onSuccess = { onChanged() },
                 onFailure = { exception ->
                     // 400 from the API specifically means current_password
-                    // didn't match (see trip-trace-api#60) — anything else
-                    // (network, 5xx) gets a generic message instead of
-                    // implying the password itself was wrong.
+                    // didn't match — anything else (network, 5xx) gets a
+                    // generic message instead of implying the password
+                    // itself was wrong.
                     errorMessage = if (exception is HttpException && exception.code() == 400) {
                         "La contrasena actual es incorrecta"
                     } else {
