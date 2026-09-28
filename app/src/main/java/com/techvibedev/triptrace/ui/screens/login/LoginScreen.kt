@@ -130,9 +130,10 @@ fun LoginScreen(authRepository: AuthRepository, onLoginSuccess: () -> Unit) {
                     isLoading = false
                     result.fold(
                         onSuccess = { onLoginSuccess() },
-                        onFailure = {
-                            errorMessage = "No se pudo iniciar sesion. Revisa tu email/usuario y contrasena."
-                        },
+                        // The message depends on what actually failed: wrong
+                        // credentials, the API's rate limiter (429), or no
+                        // connection — see AuthErrorMessages.kt.
+                        onFailure = { error -> errorMessage = loginErrorMessage(error) },
                     )
                 }
             },
