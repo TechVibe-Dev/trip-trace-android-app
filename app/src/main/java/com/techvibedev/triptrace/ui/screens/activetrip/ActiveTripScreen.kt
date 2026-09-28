@@ -22,11 +22,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -67,6 +69,11 @@ import com.techvibedev.triptrace.service.TripTrackingService
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -77,8 +84,8 @@ data class TripStop(
 )
 
 // GpsPoint.speed is stored in m/s (Android's Location.getSpeed() unit) —
-// same conversion applied server-side in trip-trace-api#41, needed again
-// here since this reads Room directly and never goes through the API.
+// same conversion applied server-side, needed again here since this reads
+// Room directly and never goes through the API.
 private const val MS_TO_KMH = 3.6
 
 // How often, while a trip is in progress, we (a) upload any GPS points Room
@@ -86,8 +93,13 @@ private const val MS_TO_KMH = 3.6
 // progress from the API. Chosen as a balance: frequent enough that the
 // screen feels live, infrequent enough not to hammer Google Routes (each
 // recalculate-eta is a billable-ish call, see routing_service.py) or the
-// device's radio/battery. Matches the interval agreed on with api#7.
+// device's radio/battery.
 private const val POLL_INTERVAL_MS = 30_000L
+
+// Same 100m radius the API already uses server-side to mark a stop
+// reached, for consistency between what the server considers "arrived" and
+// what this screen prompts about.
+private const val ARRIVAL_THRESHOLD_METERS = 100.0
 
 // Floating cards sit on top of a full-screen map (agreed design: the map is
 // the protagonist of this screen) — a flat surface color would be
@@ -113,12 +125,31 @@ fun ActiveTripScreen(
     // unconditionally meant the card could flash "--" for a few seconds
     // even with a real reading moments earlier.
     val latestPointWithSpeed by gpsPointDao.observeLatestWithSpeed(tripId).collectAsState(initial = null)
+    // Separate from the speed-filtered one above — arrival detection only
+    // needs position, so it shouldn't wait out the same null-speed bursts.
+    val latestPoint by gpsPointDao.observeLatest(tripId).collectAsState(initial = null)
 
     var trip by remember { mutableStateOf<TripResponse?>(null) }
     var liveArrivalAt by remember { mutableStateOf<String?>(null) }
     var stops by remember { mutableStateOf<List<StopResponse>>(emptyList()) }
     var isEnding by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    // Confirmation before the manual "Finalizar viaje" button actually ends
+    // the trip, so a misclick doesn't close it out by accident.
+    var showEndTripConfirmDialog by remember { mutableStateOf(false) }
+    // Prompts once, automatically, on getting within ARRIVAL_THRESHOLD_METERS
+    // of the destination — not a hard auto-finish, since the trip genuinely
+    // might continue past this point (a stop just short of the actual
+    // destination, or the user driving further for some other reason) or
+    // the user might want to linger before ending it. Deliberately
+    // fire-once per screen session via hasPromptedArrival: sitting right at
+    // the destination would otherwise re-trigger on every new point for as
+    // long as the trip stays open. If dismissed with "Seguir viaje", it
+    // does not ask again — the manual button (with its own new
+    // confirmation above) is still right there whenever the user does want
+    // to finish, covering both "kept driving" and "never really arrives".
+    var hasPromptedArrival by remember { mutableStateOf(false) }
+    var showArrivalDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -130,12 +161,12 @@ fun ActiveTripScreen(
                 result.fold(
                     onSuccess = { trip = it },
                     onFailure = {
-                        errorMessage = "No se pudo cargar el viaje, no se inicio la grabacion."
+                        errorMessage = "No se pudo cargar el viaje, no se inició la grabación."
                     },
                 )
             }
         } else {
-            errorMessage = "Se necesita permiso de ubicacion para grabar el viaje"
+            errorMessage = "Se necesita permiso de ubicación para grabar el viaje"
         }
     }
 
@@ -150,7 +181,7 @@ fun ActiveTripScreen(
             result.fold(
                 onSuccess = { trip = it },
                 onFailure = {
-                    errorMessage = "No se pudo cargar el viaje, no se inicio la grabacion."
+                    errorMessage = "No se pudo cargar el viaje, no se inició la grabación."
                 },
             )
         } else {
@@ -188,6 +219,27 @@ fun ActiveTripScreen(
                 liveArrivalAt = eta.calculatedArrivalAt
             }
             tripRepository.getStops(tripId).onSuccess { stops = it }
+        }
+    }
+
+    // Checked on every new point (roughly every 3s, matching
+    // TripTrackingService's recording interval) against the trip's
+    // destination. Only runs while this screen is actually composed (i.e.
+    // in the foreground); with the screen off or the app backgrounded, GPS
+    // recording itself keeps going via the foreground service, but this
+    // particular prompt does not fire until the screen is reopened and
+    // notices the trip already sitting within range. A background,
+    // notification-based version of this same check is a reasonable
+    // follow-up, not included here.
+    LaunchedEffect(latestPoint, trip) {
+        val point = latestPoint ?: return@LaunchedEffect
+        val destLat = trip?.destinationLat ?: return@LaunchedEffect
+        val destLng = trip?.destinationLng ?: return@LaunchedEffect
+        if (hasPromptedArrival) return@LaunchedEffect
+        val distanceMeters = haversineMeters(point.lat, point.lng, destLat, destLng)
+        if (distanceMeters <= ARRIVAL_THRESHOLD_METERS) {
+            hasPromptedArrival = true
+            showArrivalDialog = true
         }
     }
 
@@ -360,7 +412,7 @@ fun ActiveTripScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
-                    onClick = { endTrip() },
+                    onClick = { showEndTripConfirmDialog = true },
                     enabled = !isEnding,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -376,6 +428,52 @@ fun ActiveTripScreen(
                 }
             }
         }
+    }
+
+    if (showEndTripConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showEndTripConfirmDialog = false },
+            title = { Text("Finalizar viaje") },
+            text = { Text("¿Seguro que querés finalizar el viaje?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEndTripConfirmDialog = false
+                        endTrip()
+                    },
+                ) {
+                    Text("Finalizar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEndTripConfirmDialog = false }) {
+                    Text("Cancelar")
+                }
+            },
+        )
+    }
+
+    if (showArrivalDialog) {
+        AlertDialog(
+            onDismissRequest = { showArrivalDialog = false },
+            title = { Text("Llegaste a destino") },
+            text = { Text("¿Querés finalizar el viaje?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showArrivalDialog = false
+                        endTrip()
+                    },
+                ) {
+                    Text("Finalizar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showArrivalDialog = false }) {
+                    Text("Seguir viaje")
+                }
+            },
+        )
     }
 }
 
@@ -427,14 +525,26 @@ private fun TripResponse.toEntity(syncedAt: String): TripEntity {
 }
 
 // actual_arrival_at is set server-side once a synced GPS point lands within
-// 100m of the stop (trip-trace-api's stop_detection_service) — this is a
-// pure display mapping, no client-side proximity logic.
+// 100m of the stop — this is a pure display mapping, no client-side
+// proximity logic.
 private fun StopResponse.toTripStop(): TripStop {
     return TripStop(
         label = name ?: "Parada",
         timeLabel = formatLocalTime(actualArrivalAt ?: plannedArrivalAt),
         reached = actualArrivalAt != null,
     )
+}
+
+// Standard great-circle distance — no equivalent existed yet in the Android
+// app itself (server-side stop detection does its own version in Python).
+private fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+    val earthRadiusMeters = 6_371_000.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLng = Math.toRadians(lng2 - lng1)
+    val a = sin(dLat / 2).pow(2) +
+        cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLng / 2).pow(2)
+    val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return earthRadiusMeters * c
 }
 
 @Composable
@@ -523,10 +633,10 @@ private fun LiveRouteMap(
     val points by gpsPointDao.observeAllByTripId(tripId).collectAsState(initial = emptyList())
     val cameraPositionState = rememberCameraPositionState()
     var hasCenteredOnce by remember { mutableStateOf(false) }
-    // Dark map style (android#68) — Google's default palette is light and
-    // clashes with the rest of the (dark-themed) app. loadRawResourceStyle
-    // just parses JSON, no dependency on the Maps system being initialized
-    // (unlike BitmapDescriptorFactory below), so this is safe to build
+    // Dark map style — Google's default palette is light and clashes with
+    // the rest of the (dark-themed) app. loadRawResourceStyle just parses
+    // JSON, no dependency on the Maps system being initialized (unlike
+    // BitmapDescriptorFactory below), so this is safe to build
     // unconditionally here.
     val mapProperties = remember {
         MapProperties(mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark))
@@ -567,7 +677,7 @@ private fun LiveRouteMap(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "Esperando ubicacion...",
+                    text = "Esperando ubicación...",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -609,7 +719,7 @@ private fun LiveRouteMap(
                     // jittery reading.
                     rotation = latest.bearing?.toFloat() ?: 0f,
                     flat = true,
-                    title = "Posicion actual",
+                    title = "Posición actual",
                 )
                 if (originLat != null && originLng != null) {
                     Marker(

@@ -55,8 +55,8 @@ android {
         // just goes up by 1 each release rather than encoding the version
         // number itself. versionName is the human-readable one shown in
         // Settings > Apps.
-        versionCode = 2
-        versionName = "0.4.0"
+        versionCode = 3
+        versionName = "0.5.0"
 
         manifestPlaceholders["mapsApiKey"] = mapsApiKey
     }
@@ -93,6 +93,10 @@ android {
 
     buildFeatures {
         compose = true
+        // Needed for BuildConfig.DEBUG, used to gate the network logging
+        // level (see RetrofitClient) — AGP 8.x no longer generates
+        // BuildConfig by default.
+        buildConfig = true
     }
 }
 

@@ -27,12 +27,14 @@ import com.techvibedev.triptrace.R
 import com.techvibedev.triptrace.data.local.GpsPointEntity
 import com.techvibedev.triptrace.data.local.SensorReadingEntity
 import com.techvibedev.triptrace.data.local.TripTraceDatabase
+import com.techvibedev.triptrace.data.session.SettingsDataStore
 import java.time.OffsetDateTime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 // Foreground service that keeps recording GPS points to Room while a trip is
@@ -91,8 +93,16 @@ class TripTrackingService : Service() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         createNotificationChannel()
-        registerSensorListeners()
-        startSensorFlushLoop()
+
+        serviceScope.launch {
+            val sensorRecordingEnabled = SettingsDataStore(applicationContext)
+                .sensorRecordingEnabledFlow
+                .first()
+            if (sensorRecordingEnabled) {
+                registerSensorListeners()
+                startSensorFlushLoop()
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")

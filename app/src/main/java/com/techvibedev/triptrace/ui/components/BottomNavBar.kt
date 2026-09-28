@@ -3,6 +3,7 @@ package com.techvibedev.triptrace.ui.components
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -20,6 +21,7 @@ private data class BottomNavItem(
 private val bottomNavItems = listOf(
     BottomNavItem(route = Routes.TRIPS, label = "Viajes", icon = Icons.Filled.DirectionsCar),
     BottomNavItem(route = Routes.HISTORY, label = "Historial", icon = Icons.Filled.History),
+    BottomNavItem(route = Routes.USER, label = "Perfil", icon = Icons.Filled.Person),
 )
 
 @Composable
