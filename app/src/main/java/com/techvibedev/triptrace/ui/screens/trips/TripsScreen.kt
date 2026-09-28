@@ -80,7 +80,7 @@ fun TripsScreen(tripRepository: TripRepository, onStartTrip: (String) -> Unit) {
             }
             trips.isEmpty() -> {
                 Text(
-                    text = "No tenes viajes planeados todavia.",
+                    text = "No tenés viajes planeados todavía.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
@@ -154,7 +154,7 @@ private fun PlannedTripCard(
                     )
                     Spacer(modifier = Modifier.size(6.dp))
                     Text(
-                        text = "Hora planeada (${formatLocalTime(trip.plannedDepartureAt)}) ya paso",
+                        text = "Hora planeada (${formatLocalTime(trip.plannedDepartureAt)}) ya pasó",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.secondary,
                     )

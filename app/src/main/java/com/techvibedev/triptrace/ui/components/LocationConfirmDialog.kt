@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
-
 package com.techvibedev.triptrace.ui.components
 
 import androidx.compose.foundation.background
@@ -49,6 +47,7 @@ import com.techvibedev.triptrace.R
 // all (a total geocoding failure, or there simply wasn't any text to
 // geocode) — the dialog still opens, centered on a fallback point, so the
 // user has a way to place the pin themselves instead of hitting a dead end.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LocationConfirmDialog(
     label: String,
@@ -90,9 +89,9 @@ fun LocationConfirmDialog(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = if (wasGeocoded) {
-                    "Mantene presionado el pin para arrastrarlo y ajustar la ubicacion."
+                    "Mantener presionado el pin para arrastrarlo y ajustar la ubicación."
                 } else {
-                    "No pudimos encontrar esta direccion automaticamente. Mantene presionado " +
+                    "No pudimos encontrar esta dirección automáticamente. Mantener presionado " +
                         "el pin y arrastralo hasta el lugar correcto."
                 },
                 style = MaterialTheme.typography.labelSmall,
