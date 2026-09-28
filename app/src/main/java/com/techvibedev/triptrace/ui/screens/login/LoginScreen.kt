@@ -107,7 +107,7 @@ fun LoginScreen(
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("Contrasena") },
+            label = { Text("Contraseña") },
             singleLine = true,
             enabled = !isLoading,
             visualTransformation = PasswordVisualTransformation(),
@@ -154,7 +154,7 @@ fun LoginScreen(
                     strokeWidth = 2.dp,
                 )
             } else {
-                Text("Iniciar sesion")
+                Text("Iniciar sesión")
             }
         }
 
