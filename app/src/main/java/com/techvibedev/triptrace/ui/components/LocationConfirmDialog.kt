@@ -90,9 +90,9 @@ fun LocationConfirmDialog(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = if (wasGeocoded) {
-                    "Mantene presionado el pin para arrastrarlo y ajustar la ubicacion."
+                    "Mantené presionado el pin para arrastrarlo y ajustar la ubicación."
                 } else {
-                    "No pudimos encontrar esta direccion automaticamente. Mantene presionado " +
+                    "No pudimos encontrar esta dirección automáticamente. Mantené presionado " +
                         "el pin y arrastralo hasta el lugar correcto."
                 },
                 style = MaterialTheme.typography.labelSmall,

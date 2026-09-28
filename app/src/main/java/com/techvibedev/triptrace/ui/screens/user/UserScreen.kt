@@ -176,7 +176,7 @@ fun UserScreen(
             // Clearing it and navigating to Login here, right after a
             // successful change, avoids the alternative: staying on a
             // now-broken session where every screen fails with a generic
-            // error until the user finds "Cerrar sesion" themselves.
+            // error until the user finds "Cerrar sesión" themselves.
             onChanged = {
                 showChangePasswordDialog = false
                 authRepository.logout()
@@ -266,7 +266,7 @@ private fun FavoritesCard(
                 }
                 favorites.isEmpty() -> {
                     Text(
-                        text = "Todavia no tenes favoritos guardados.",
+                        text = "Todavía no tenés favoritos guardados.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -342,7 +342,7 @@ private fun AddFavoriteDialog(
 
     fun openMapPicker() {
         if (name.isBlank()) {
-            errorMessage = "Ingresa un nombre primero"
+            errorMessage = "Ingresá un nombre primero"
             return
         }
         scope.launch {
@@ -366,7 +366,7 @@ private fun AddFavoriteDialog(
             val fallback = locationProvider.getCurrentLocation().getOrNull()
                 ?: (FALLBACK_LAT to FALLBACK_LNG)
             isResolving = false
-            errorMessage = if (addressText.isNotBlank()) "No se encontro esa direccion" else null
+            errorMessage = if (addressText.isNotBlank()) "No se encontró esa dirección" else null
             wasGeocoded = false
             confirmCoords = fallback
         }
@@ -374,7 +374,7 @@ private fun AddFavoriteDialog(
 
     fun openConfirmFromCurrentLocation() {
         if (name.isBlank()) {
-            errorMessage = "Ingresa un nombre primero"
+            errorMessage = "Ingresá un nombre primero"
             return
         }
         scope.launch {
@@ -387,7 +387,7 @@ private fun AddFavoriteDialog(
                     wasGeocoded = true
                     confirmCoords = lat to lng
                 },
-                onFailure = { errorMessage = "No se pudo obtener tu ubicacion" },
+                onFailure = { errorMessage = "No se pudo obtener tu ubicación" },
             )
         }
     }
@@ -419,7 +419,7 @@ private fun AddFavoriteDialog(
                     OutlinedTextField(
                         value = addressText,
                         onValueChange = { addressText = it },
-                        label = { Text("Direccion (opcional)") },
+                        label = { Text("Dirección (opcional)") },
                         singleLine = true,
                         enabled = !isResolving,
                         trailingIcon = {
@@ -437,7 +437,7 @@ private fun AddFavoriteDialog(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     TextButton(onClick = { openConfirmFromCurrentLocation() }, enabled = !isResolving) {
-                        Text("Usar mi ubicacion actual")
+                        Text("Usar mi ubicación actual")
                     }
                     errorMessage?.let { message ->
                         Spacer(modifier = Modifier.height(8.dp))
@@ -553,7 +553,7 @@ private fun ChangePasswordDialog(
             return
         }
         if (currentPassword.isBlank() || newPassword.isBlank()) {
-            errorMessage = "Completa todos los campos"
+            errorMessage = "Completá todos los campos"
             return
         }
         errorMessage = null
@@ -571,7 +571,7 @@ private fun ChangePasswordDialog(
                     errorMessage = if (exception is HttpException && exception.code() == 400) {
                         "La contraseña actual es incorrecta"
                     } else {
-                        "No se pudo cambiar la contraseña, intenta de nuevo"
+                        "No se pudo cambiar la contraseña, intentá de nuevo"
                     }
                 },
             )

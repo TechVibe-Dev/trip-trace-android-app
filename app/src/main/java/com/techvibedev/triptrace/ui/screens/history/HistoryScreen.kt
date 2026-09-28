@@ -82,7 +82,7 @@ private val SEGMENT_COLORS = mapOf(
 private val SEGMENT_LABELS = mapOf(
     "SLOW" to "Lento",
     "NORMAL" to "Normal",
-    "FAST" to "Rapido",
+    "FAST" to "Rápido",
 )
 
 @Composable
@@ -122,7 +122,7 @@ fun HistoryScreen(tripRepository: TripRepository) {
             }
             trips.isEmpty() -> {
                 Text(
-                    text = "Todavia no hay viajes completados.",
+                    text = "Todavía no hay viajes completados.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
@@ -200,7 +200,7 @@ private fun PastTripCard(
                 RealRouteMap(tripId = trip.id, tripRepository = tripRepository)
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    TripStat(label = "Maxima", value = formatSpeed(trip.maxSpeed))
+                    TripStat(label = "Máxima", value = formatSpeed(trip.maxSpeed))
                     TripStat(label = "Promedio", value = formatSpeed(trip.avgSpeed))
                     TripStat(label = "Distancia", value = formatDistance(trip.distanceKm))
                 }
@@ -288,7 +288,7 @@ private fun SensorDataCleanupRow(tripId: String) {
             title = { Text("Borrar datos de sensores") },
             text = {
                 Text(
-                    "Se van a borrar los $readingCount registros de acelerometro/giroscopio " +
+                    "Se van a borrar los $readingCount registros de acelerómetro/giroscopio " +
                         "grabados para este viaje. No se puede deshacer.",
                 )
             },

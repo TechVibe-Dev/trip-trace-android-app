@@ -161,12 +161,12 @@ fun ActiveTripScreen(
                 result.fold(
                     onSuccess = { trip = it },
                     onFailure = {
-                        errorMessage = "No se pudo cargar el viaje, no se inicio la grabacion."
+                        errorMessage = "No se pudo cargar el viaje, no se inició la grabación."
                     },
                 )
             }
         } else {
-            errorMessage = "Se necesita permiso de ubicacion para grabar el viaje"
+            errorMessage = "Se necesita permiso de ubicación para grabar el viaje"
         }
     }
 
@@ -181,7 +181,7 @@ fun ActiveTripScreen(
             result.fold(
                 onSuccess = { trip = it },
                 onFailure = {
-                    errorMessage = "No se pudo cargar el viaje, no se inicio la grabacion."
+                    errorMessage = "No se pudo cargar el viaje, no se inició la grabación."
                 },
             )
         } else {
@@ -434,7 +434,7 @@ fun ActiveTripScreen(
         AlertDialog(
             onDismissRequest = { showEndTripConfirmDialog = false },
             title = { Text("Finalizar viaje") },
-            text = { Text("¿Seguro que queres finalizar el viaje?") },
+            text = { Text("¿Seguro que querés finalizar el viaje?") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -457,7 +457,7 @@ fun ActiveTripScreen(
         AlertDialog(
             onDismissRequest = { showArrivalDialog = false },
             title = { Text("Llegaste a destino") },
-            text = { Text("¿Queres finalizar el viaje?") },
+            text = { Text("¿Querés finalizar el viaje?") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -677,7 +677,7 @@ private fun LiveRouteMap(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "Esperando ubicacion...",
+                    text = "Esperando ubicación...",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -719,7 +719,7 @@ private fun LiveRouteMap(
                     // jittery reading.
                     rotation = latest.bearing?.toFloat() ?: 0f,
                     flat = true,
-                    title = "Posicion actual",
+                    title = "Posición actual",
                 )
                 if (originLat != null && originLng != null) {
                     Marker(
