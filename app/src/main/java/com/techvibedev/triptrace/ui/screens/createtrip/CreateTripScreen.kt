@@ -183,7 +183,7 @@ fun CreateTripScreen(
                 // happens straight on a real phone, without Android Studio
                 // attached to read logs.
                 val detail = exception.message ?: exception::class.simpleName ?: "error desconocido"
-                locationError = "No se pudo obtener tu ubicacion: $detail"
+                locationError = "No se pudo obtener tu ubicación: $detail"
             },
         )
     }
@@ -194,7 +194,7 @@ fun CreateTripScreen(
         if (granted) {
             scope.launch { fetchCurrentLocation() }
         } else {
-            locationError = "Se necesita permiso de ubicacion"
+            locationError = "Se necesita permiso de ubicación"
         }
     }
 
@@ -224,7 +224,7 @@ fun CreateTripScreen(
     // false (the field doesn't exist otherwise).
     fun openMapConfirmForOrigin() {
         if (originText.isBlank()) {
-            errorMessage = "Ingresa un origen primero"
+            errorMessage = "Ingresá un origen primero"
             return
         }
         scope.launch {
@@ -245,7 +245,7 @@ fun CreateTripScreen(
 
     fun openMapConfirmForDestination() {
         if (destination.isBlank()) {
-            errorMessage = "Ingresa un destino primero"
+            errorMessage = "Ingresá un destino primero"
             return
         }
         scope.launch {
@@ -297,15 +297,15 @@ fun CreateTripScreen(
         }
 
         if (destination.isBlank()) {
-            errorMessage = "Ingresa un destino"
+            errorMessage = "Ingresá un destino"
             return
         }
         if (useCurrentLocation && (currentLat == null || currentLng == null)) {
-            errorMessage = "Esperando tu ubicacion, intenta de nuevo en un momento"
+            errorMessage = "Esperando tu ubicación, intentá de nuevo en un momento"
             return
         }
         if (!useCurrentLocation && originText.isBlank()) {
-            errorMessage = "Ingresa un origen"
+            errorMessage = "Ingresá un origen"
             return
         }
         errorMessage = null
@@ -326,7 +326,7 @@ fun CreateTripScreen(
                     lng = lng,
                     wasGeocoded = false,
                 )
-                errorMessage = "No se encontro \"$originText\" automaticamente — marca el punto en el mapa"
+                errorMessage = "No se encontró \"$originText\" automáticamente — marcá el punto en el mapa"
                 return@launch
             }
 
@@ -348,7 +348,7 @@ fun CreateTripScreen(
                     lng = lng,
                     wasGeocoded = false,
                 )
-                errorMessage = "No se encontro \"$destination\" automaticamente — marca el punto en el mapa"
+                errorMessage = "No se encontró \"$destination\" automáticamente — marcá el punto en el mapa"
                 return@launch
             }
 
@@ -374,7 +374,7 @@ fun CreateTripScreen(
                         lng = lng,
                         wasGeocoded = false,
                     )
-                    errorMessage = "No se encontro \"${stop.name}\" automaticamente — marca el punto en el mapa"
+                    errorMessage = "No se encontró \"${stop.name}\" automáticamente — marcá el punto en el mapa"
                     return@launch
                 }
                 geocodedStops.add(stop.name to stopCoords)
@@ -386,7 +386,7 @@ fun CreateTripScreen(
             val originName = if (useCurrentLocation) {
                 geocodingProvider
                     .reverseGeocode(originCoordsResolved.first, originCoordsResolved.second)
-                    .getOrDefault("Ubicacion actual")
+                    .getOrDefault("Ubicación actual")
             } else {
                 originText
             }
@@ -433,7 +433,7 @@ fun CreateTripScreen(
                         startResult.fold(
                             onSuccess = { onTripStarted(trip.id) },
                             onFailure = {
-                                errorMessage = "El viaje se guardo pero no se pudo iniciar."
+                                errorMessage = "El viaje se guardó pero no se pudo iniciar."
                             },
                         )
                     } else {
@@ -660,7 +660,7 @@ fun CreateTripScreen(
     }
 }
 
-// Toggles between "Ubicacion actual" (GPS, unchanged from before) and a
+// Toggles between "Ubicación actual" (GPS, unchanged from before) and a
 // manual FavoriteAwareTextField — the manual path didn't exist before
 // android#81, origin had no text entry at all.
 @Composable
@@ -694,7 +694,7 @@ private fun OriginField(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Ubicacion actual",
+                    text = "Ubicación actual",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f),
                 )
@@ -741,7 +741,7 @@ private fun OriginField(
             )
             Spacer(modifier = Modifier.height(4.dp))
             TextButton(onClick = onChangeClick, enabled = enabled) {
-                Text("Usar ubicacion actual")
+                Text("Usar ubicación actual")
             }
         }
     }
