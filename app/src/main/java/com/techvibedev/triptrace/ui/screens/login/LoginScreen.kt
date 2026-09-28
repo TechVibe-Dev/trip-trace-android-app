@@ -1,6 +1,7 @@
 package com.techvibedev.triptrace.ui.screens.login
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,7 +44,11 @@ import kotlinx.coroutines.launch
 // still nudges autofill/password managers, just less reliably across
 // providers than the newer API. Revisit once the BOM gets bumped.
 @Composable
-fun LoginScreen(authRepository: AuthRepository, onLoginSuccess: () -> Unit) {
+fun LoginScreen(
+    authRepository: AuthRepository,
+    onLoginSuccess: () -> Unit,
+    onRegisterClick: () -> Unit,
+) {
     var identifier by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
@@ -157,7 +162,7 @@ fun LoginScreen(authRepository: AuthRepository, onLoginSuccess: () -> Unit) {
 
         Row {
             Text(
-                text = "No tenes cuenta? ",
+                text = "¿No tenés cuenta? ",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -166,6 +171,7 @@ fun LoginScreen(authRepository: AuthRepository, onLoginSuccess: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Medium,
+                modifier = Modifier.clickable(enabled = !isLoading, onClick = onRegisterClick),
             )
         }
     }
