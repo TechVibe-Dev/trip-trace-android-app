@@ -42,3 +42,19 @@ internal fun loginErrorMessage(error: Throwable): String {
         ApiFailure.Unknown -> "No se pudo iniciar sesión. Probá de nuevo."
     }
 }
+
+internal fun registerErrorMessage(error: Throwable): String {
+    return when (val failure = error.toApiFailure()) {
+        // Registration is limited to 3/hour per IP, so this wait can be long.
+        is ApiFailure.RateLimited -> rateLimitMessage(failure.retryAfterSeconds)
+        is ApiFailure.Http -> when (failure.code) {
+            // The API doesn't say which of the two already exists, on purpose
+            // (trip-trace-api#68) — so neither can this message.
+            400 -> "Ese email o usuario ya está en uso."
+            422 -> "Revisá los datos: el email tiene que ser válido y la contraseña no puede pasar de 72 bytes."
+            else -> "Algo salió mal en el servidor. Probá de nuevo en un rato."
+        }
+        ApiFailure.NoConnection -> "No se pudo conectar. Revisá tu conexión y probá de nuevo."
+        ApiFailure.Unknown -> "No se pudo crear la cuenta. Probá de nuevo."
+    }
+}

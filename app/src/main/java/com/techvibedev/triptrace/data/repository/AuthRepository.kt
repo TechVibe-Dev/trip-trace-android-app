@@ -1,6 +1,7 @@
 package com.techvibedev.triptrace.data.repository
 
 import com.techvibedev.triptrace.data.model.PasswordChangeRequest
+import com.techvibedev.triptrace.data.model.RegisterRequest
 import com.techvibedev.triptrace.data.model.UserResponse
 import com.techvibedev.triptrace.data.network.AuthApiService
 import com.techvibedev.triptrace.data.session.TokenDataStore
@@ -17,6 +18,17 @@ class AuthRepository(
     private suspend fun authHeader(): String {
         val token = tokenDataStore.tokenFlow.first() ?: error("No auth token available")
         return "Bearer $token"
+    }
+
+    // Creates the account only — it doesn't log in. What happens next is up to
+    // the caller (RegisterScreen logs in right after).
+    suspend fun register(email: String, username: String, password: String): Result<Unit> {
+        return try {
+            apiService.register(RegisterRequest(email = email, username = username, password = password))
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     // identifier: either the user's email or their username.

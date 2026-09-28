@@ -31,6 +31,7 @@ import com.techvibedev.triptrace.ui.screens.activetrip.ActiveTripScreen
 import com.techvibedev.triptrace.ui.screens.createtrip.CreateTripScreen
 import com.techvibedev.triptrace.ui.screens.history.HistoryScreen
 import com.techvibedev.triptrace.ui.screens.login.LoginScreen
+import com.techvibedev.triptrace.ui.screens.register.RegisterScreen
 import com.techvibedev.triptrace.ui.screens.trips.TripsScreen
 import com.techvibedev.triptrace.ui.screens.user.UserScreen
 
@@ -99,6 +100,21 @@ fun TripTraceNavHost(navController: NavHostController = rememberNavController())
                             popUpTo(Routes.LOGIN) { inclusive = true }
                         }
                     },
+                    onRegisterClick = { navController.navigate(Routes.REGISTER) },
+                )
+            }
+            composable(Routes.REGISTER) {
+                RegisterScreen(
+                    authRepository = authRepository,
+                    // Registering logs in too, so this lands where a normal login
+                    // would. Popping up to LOGIN (inclusive) also drops the
+                    // register screen sitting on top of it.
+                    onRegistered = {
+                        navController.navigate(Routes.TRIPS) {
+                            popUpTo(Routes.LOGIN) { inclusive = true }
+                        }
+                    },
+                    onBackToLogin = { navController.popBackStack() },
                 )
             }
             composable(Routes.TRIPS) {
