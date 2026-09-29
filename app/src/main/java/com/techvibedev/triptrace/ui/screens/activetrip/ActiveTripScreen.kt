@@ -41,7 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -416,65 +415,45 @@ fun ActiveTripScreen(
                 }
             }
 
-            // Gradient scrim behind the bottom panel — the map is now
-            // zoomed close, so real map imagery is much more likely to sit
-            // directly behind this text than before; the translucent cards
-            // alone were enough contrast against a zoomed-out route view,
-            // less so against close-up street-level detail.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0.0f to Color.Transparent,
-                                0.35f to MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
-                                0.75f to MaterialTheme.colorScheme.background,
-                            ),
-                        ),
+            Column {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(OverlayCardColor, RoundedCornerShape(10.dp))
+                        .padding(12.dp),
+                ) {
+                    displayRows.forEachIndexed { index, stop ->
+                        StopRow(stop = stop)
+                        if (index != displayRows.lastIndex) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                }
+
+                errorMessage?.let { message ->
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
                     )
-                    .padding(top = 40.dp),
-            ) {
-                Column {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(OverlayCardColor, RoundedCornerShape(10.dp))
-                            .padding(12.dp),
-                    ) {
-                        displayRows.forEachIndexed { index, stop ->
-                            StopRow(stop = stop)
-                            if (index != displayRows.lastIndex) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                            }
-                        }
-                    }
+                }
 
-                    errorMessage?.let { message ->
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = message,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error,
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = { showEndTripConfirmDialog = true },
+                    enabled = !isEnding,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (isEnding) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp,
                         )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Button(
-                        onClick = { showEndTripConfirmDialog = true },
-                        enabled = !isEnding,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        if (isEnding) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
-                            Text("Finalizar viaje")
-                        }
+                    } else {
+                        Text("Finalizar viaje")
                     }
                 }
             }
@@ -735,6 +714,15 @@ private fun LiveRouteMap(
     val mapProperties = remember {
         MapProperties(mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark))
     }
+    // Google draws its own compass button (appears automatically once the
+    // map's bearing isn't north-up, which is now always true here) and its
+    // own "my location" button at fixed corners that know nothing about
+    // this screen's own overlay cards, ending up stuck half-hidden behind
+    // them. Neither is needed anyway — the ManeuverIcon/stat cards already
+    // show heading and position — so both stay off.
+    val mapUiSettings = remember {
+        MapUiSettings(zoomControlsEnabled = false, compassEnabled = false, myLocationButtonEnabled = false)
+    }
     // Holds the current-position marker's state ourselves rather than using
     // rememberMarkerState(position = ...) — that helper only sets position
     // on the marker's FIRST creation; passing a fresh position on later
@@ -813,7 +801,7 @@ private fun LiveRouteMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
                 properties = mapProperties,
-                uiSettings = MapUiSettings(zoomControlsEnabled = false),
+                uiSettings = mapUiSettings,
             ) {
                 // Suggested route once available; falls back to the trail
                 // recorded so far for the brief gap before the first
