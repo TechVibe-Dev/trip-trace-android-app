@@ -9,8 +9,8 @@ data class EtaRecalculationResponse(
     @SerializedName("calculated_arrival_at") val calculatedArrivalAt: String,
     @SerializedName("route_polyline") val routePolyline: String,
     // steps[0] is always "the next maneuver from here" — this route was
-    // just computed FROM the trip's current position (trip-trace-api#70),
-    // so there's no separate step-matching to do here: android#110.
+    // just computed FROM the trip's current position, so there's no
+    // separate step-matching to do here.
     val steps: List<RouteStepResponse>,
 )
 
