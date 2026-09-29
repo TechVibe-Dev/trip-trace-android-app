@@ -40,8 +40,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -62,10 +65,13 @@ import com.techvibedev.triptrace.R
 import com.techvibedev.triptrace.data.local.GpsPointDao
 import com.techvibedev.triptrace.data.local.TripEntity
 import com.techvibedev.triptrace.data.local.TripTraceDatabase
+import com.techvibedev.triptrace.data.model.RouteStepResponse
 import com.techvibedev.triptrace.data.model.StopResponse
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
 import com.techvibedev.triptrace.service.TripTrackingService
+import com.techvibedev.triptrace.ui.components.ManeuverIcon
+import com.techvibedev.triptrace.util.decodePolyline
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -89,17 +95,25 @@ data class TripStop(
 private const val MS_TO_KMH = 3.6
 
 // How often, while a trip is in progress, we (a) upload any GPS points Room
-// has recorded since the last tick and (b) refresh the live ETA and stop
-// progress from the API. Chosen as a balance: frequent enough that the
-// screen feels live, infrequent enough not to hammer Google Routes (each
-// recalculate-eta is a billable-ish call, see routing_service.py) or the
-// device's radio/battery.
+// has recorded since the last tick and (b) refresh the live ETA, turn-by-
+// turn steps, and stop progress from the API. Chosen as a balance:
+// frequent enough that the screen feels live, infrequent enough not to
+// hammer Google Routes (each recalculate-eta is a billable-ish call, see
+// routing_service.py) or the device's radio/battery.
 private const val POLL_INTERVAL_MS = 30_000L
 
 // Same 100m radius the API already uses server-side to mark a stop
 // reached, for consistency between what the server considers "arrived" and
 // what this screen prompts about.
 private const val ARRIVAL_THRESHOLD_METERS = 100.0
+
+// Close, tilted, bearing-following camera — replaces the old "fit the whole
+// recorded route" behavior (android#110), so this screen reads as a
+// close-up navigation view (Waze/Maps-style) instead of a route overview.
+// The overview is still available: History shows a trip's complete real
+// route after the fact, unaffected by this.
+private const val NAV_ZOOM = 18.5f
+private const val NAV_TILT = 50f
 
 // Floating cards sit on top of a full-screen map (agreed design: the map is
 // the protagonist of this screen) — a flat surface color would be
@@ -131,6 +145,13 @@ fun ActiveTripScreen(
 
     var trip by remember { mutableStateOf<TripResponse?>(null) }
     var liveArrivalAt by remember { mutableStateOf<String?>(null) }
+    // Route from the current position to the destination, and its turn-by-
+    // turn steps — both refreshed on every recalculate-eta poll
+    // (trip-trace-api#70). steps[0] is always "the next maneuver from
+    // here", since the route was just computed FROM the current position —
+    // no step-matching needed on this side.
+    var routePolyline by remember { mutableStateOf<String?>(null) }
+    var routeSteps by remember { mutableStateOf<List<RouteStepResponse>>(emptyList()) }
     var stops by remember { mutableStateOf<List<StopResponse>>(emptyList()) }
     var isEnding by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -196,9 +217,10 @@ fun ActiveTripScreen(
     // Live loop while the trip is in progress: every POLL_INTERVAL_MS,
     // upload whatever GPS points Room has recorded and not synced yet
     // (same mechanism as the Sync-on-finish in endTrip() below, just
-    // running periodically instead of once), then refresh the live ETA and
-    // stop progress. Tied to this composable via LaunchedEffect — cancelled
-    // automatically once the trip ends and this screen leaves composition.
+    // running periodically instead of once), then refresh the live ETA,
+    // turn-by-turn steps, and stop progress. Tied to this composable via
+    // LaunchedEffect — cancelled automatically once the trip ends and this
+    // screen leaves composition.
     LaunchedEffect(tripId) {
         while (true) {
             delay(POLL_INTERVAL_MS)
@@ -217,6 +239,8 @@ fun ActiveTripScreen(
             // keeps showing the last value it had until the next tick.
             tripRepository.recalculateEta(tripId).onSuccess { eta ->
                 liveArrivalAt = eta.calculatedArrivalAt
+                routePolyline = eta.routePolyline
+                routeSteps = eta.steps
             }
             tripRepository.getStops(tripId).onSuccess { stops = it }
         }
@@ -310,12 +334,14 @@ fun ActiveTripScreen(
             )
         }
     }
+    val nextStep = routeSteps.firstOrNull()
 
     Box(modifier = Modifier.fillMaxSize()) {
         LiveRouteMap(
             tripId = tripId,
             gpsPointDao = gpsPointDao,
             stops = stops,
+            routePolyline = routePolyline,
             originLat = currentTrip?.originLat,
             originLng = currentTrip?.originLng,
             destinationLat = currentTrip?.destinationLat,
@@ -330,11 +356,16 @@ fun ActiveTripScreen(
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Column {
+                if (nextStep != null) {
+                    TurnInstructionCard(step = nextStep)
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(OverlayCardColor, RoundedCornerShape(10.dp))
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Column {
@@ -349,7 +380,7 @@ fun ActiveTripScreen(
                             // needs at least one synced GPS point, which
                             // takes a moment after start).
                             text = formatLocalTime(liveArrivalAt ?: currentTrip?.calculatedArrivalAt),
-                            style = MaterialTheme.typography.headlineMedium,
+                            style = MaterialTheme.typography.titleLarge,
                         )
                     }
                     Column(horizontalAlignment = Alignment.End) {
@@ -360,13 +391,13 @@ fun ActiveTripScreen(
                         )
                         Text(
                             text = formatLocalTime(currentTrip?.calculatedArrivalAt),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.secondary,
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -385,45 +416,65 @@ fun ActiveTripScreen(
                 }
             }
 
-            Column {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(OverlayCardColor, RoundedCornerShape(10.dp))
-                        .padding(12.dp),
-                ) {
-                    displayRows.forEachIndexed { index, stop ->
-                        StopRow(stop = stop)
-                        if (index != displayRows.lastIndex) {
-                            Spacer(modifier = Modifier.height(8.dp))
+            // Gradient scrim behind the bottom panel — the map is now
+            // zoomed close, so real map imagery is much more likely to sit
+            // directly behind this text than before; the translucent cards
+            // alone were enough contrast against a zoomed-out route view,
+            // less so against close-up street-level detail.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color.Transparent,
+                                0.35f to MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
+                                0.75f to MaterialTheme.colorScheme.background,
+                            ),
+                        ),
+                    )
+                    .padding(top = 40.dp),
+            ) {
+                Column {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(OverlayCardColor, RoundedCornerShape(10.dp))
+                            .padding(12.dp),
+                    ) {
+                        displayRows.forEachIndexed { index, stop ->
+                            StopRow(stop = stop)
+                            if (index != displayRows.lastIndex) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
                         }
                     }
-                }
 
-                errorMessage?.let { message ->
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Button(
-                    onClick = { showEndTripConfirmDialog = true },
-                    enabled = !isEnding,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    if (isEnding) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp,
+                    errorMessage?.let { message ->
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
                         )
-                    } else {
-                        Text("Finalizar viaje")
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = { showEndTripConfirmDialog = true },
+                        enabled = !isEnding,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (isEnding) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Text("Finalizar viaje")
+                        }
                     }
                 }
             }
@@ -547,12 +598,56 @@ private fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Doub
     return earthRadiusMeters * c
 }
 
+// Google's navigationInstruction.instructions is already a complete,
+// localized, ready-to-show sentence (es-419, see trip-trace-api#70) — shown
+// verbatim, not reassembled from the maneuver type. distance_meters is
+// formatted separately below it, matching the mockup confirmed for
+// android#110 (https://claude.ai/artifact/A5pGFSAbfkXbaDuWYJiqtG).
+@Composable
+private fun TurnInstructionCard(step: RouteStepResponse, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ManeuverIcon(
+            maneuver = step.maneuver,
+            color = MaterialTheme.colorScheme.onPrimary,
+            iconSize = 32.dp,
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Column {
+            Text(
+                text = step.instructions,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary,
+            )
+            Text(
+                text = formatStepDistance(step.distanceMeters),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+            )
+        }
+    }
+}
+
+private fun formatStepDistance(distanceMeters: Int): String {
+    return if (distanceMeters >= 1000) {
+        "en %.1f km".format(distanceMeters / 1000.0)
+    } else {
+        "en $distanceMeters m"
+    }
+}
+
 @Composable
 private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .background(OverlayCardColor, RoundedCornerShape(10.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Text(
             text = label,
@@ -610,19 +705,19 @@ private fun vectorToBitmapDescriptor(context: Context, drawableResId: Int): Bitm
     return BitmapDescriptorFactory.fromBitmap(bitmap)
 }
 
-// Live map: current position + the route recorded so far, sourced straight
-// from Room (observeAllByTripId, ~every 3s as the tracking service
-// records) rather than the API — this needs to feel instant, not wait on
-// the 30s sync cycle above, which exists to get data to the server, not to
-// redraw the phone's own map. Camera follows the latest position, like a
-// navigation app, rather than staying fixed on the initial fit. Fills the
-// whole screen (agreed design) — the overlay cards in the parent Box sit on
-// top of this, not beside it.
+// Live map: current position, close/tilted/bearing-following like a
+// navigation app (android#110), sourced straight from Room
+// (observeAllByTripId, ~every 3s as the tracking service records) rather
+// than the API — this needs to feel instant, not wait on the 30s sync
+// cycle above, which exists to get data to the server, not to redraw the
+// phone's own map. Fills the whole screen (agreed design) — the overlay
+// cards in the parent Box sit on top of this, not beside it.
 @Composable
 private fun LiveRouteMap(
     tripId: String,
     gpsPointDao: GpsPointDao,
     stops: List<StopResponse>,
+    routePolyline: String?,
     originLat: Double?,
     originLng: Double?,
     destinationLat: Double?,
@@ -651,20 +746,37 @@ private fun LiveRouteMap(
     // tests likely each reopened the screen fresh, masking it, since a
     // fresh composition picks up whatever the latest point was at that
     // moment. Reassigning .position explicitly below, every recomposition,
-    // mirrors exactly how the camera above is already kept live.
+    // mirrors exactly how the camera below is kept live.
     val currentPositionMarkerState = remember { MarkerState() }
+
+    // Suggested route ahead, from the latest recalculate-eta poll — the
+    // primary route line in this close-up view (android#110), replacing
+    // the previous "whole recorded trail" Polyline. flat markers' rotation
+    // is in the same absolute-bearing coordinate frame the camera's own
+    // bearing rotates the canvas by, so setting both to the same heading
+    // (below) makes the arrow point straight up on screen, same as any
+    // navigation app — no extra math needed to keep the two in sync.
+    val suggestedRoutePoints = remember(routePolyline) {
+        routePolyline?.let { decodePolyline(it) } ?: emptyList()
+    }
 
     LaunchedEffect(points.size) {
         val latest = points.lastOrNull() ?: return@LaunchedEffect
         val latLng = LatLng(latest.lat, latest.lng)
+        val target = CameraPosition.Builder()
+            .target(latLng)
+            .zoom(NAV_ZOOM)
+            .tilt(NAV_TILT)
+            .bearing(latest.bearing?.toFloat() ?: 0f)
+            .build()
         if (!hasCenteredOnce) {
             // First point: jump straight there — animating from the map's
             // arbitrary default start position would be a pointless pan
             // across the globe.
-            cameraPositionState.position = CameraPosition.fromLatLngZoom(latLng, 16f)
+            cameraPositionState.position = target
             hasCenteredOnce = true
         } else {
-            cameraPositionState.animate(CameraUpdateFactory.newLatLng(latLng), durationMs = 1000)
+            cameraPositionState.animate(CameraUpdateFactory.newCameraPosition(target), durationMs = 1000)
         }
     }
 
@@ -704,7 +816,16 @@ private fun LiveRouteMap(
                 properties = mapProperties,
                 uiSettings = MapUiSettings(zoomControlsEnabled = false),
             ) {
-                if (points.size >= 2) {
+                // Suggested route once available; falls back to the trail
+                // recorded so far for the brief gap before the first
+                // recalculate-eta response comes back after starting a trip.
+                if (suggestedRoutePoints.size >= 2) {
+                    Polyline(
+                        points = suggestedRoutePoints,
+                        color = MaterialTheme.colorScheme.primary,
+                        width = 16f,
+                    )
+                } else if (points.size >= 2) {
                     Polyline(
                         points = points.map { LatLng(it.lat, it.lng) },
                         color = MaterialTheme.colorScheme.primary,
