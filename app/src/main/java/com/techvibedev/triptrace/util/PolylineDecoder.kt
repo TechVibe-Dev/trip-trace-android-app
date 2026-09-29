@@ -3,13 +3,12 @@ package com.techvibedev.triptrace.util
 import com.google.android.gms.maps.model.LatLng
 
 // Decodes Google's encoded polyline algorithm format (the same one
-// trip-trace-api stores/returns for planned_route_polyline and, since
-// android#110, recalculate-eta's route_polyline and each step's own
-// polyline) into a list of LatLng points. Standard reference
-// implementation, unchanged for years — not tied to any Google library or
-// API key, works with any encoded polyline string. Ported from the web
-// frontend's identical src/utils/polyline.ts, kept algorithmically
-// identical to it on purpose.
+// trip-trace-api stores/returns for planned_route_polyline, recalculate-
+// eta's route_polyline, and each step's own polyline) into a list of
+// LatLng points. Standard reference implementation, unchanged for years —
+// not tied to any Google library or API key, works with any encoded
+// polyline string. Ported from the web frontend's identical
+// src/utils/polyline.ts, kept algorithmically identical to it on purpose.
 fun decodePolyline(encoded: String): List<LatLng> {
     val points = mutableListOf<LatLng>()
     var index = 0
