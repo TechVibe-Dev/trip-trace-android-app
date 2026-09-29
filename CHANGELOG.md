@@ -7,6 +7,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Hid individual POI labels/icons (shops, restaurants, etc.) and transit station labels from both maps (History, Active trip) — pure visual noise while driving, same call Waze makes deliberately. Park areas stay shaded green (context, not clutter), just their name labels are hidden along with everything else. `MapStyleOptions` only, no logic touched. Closes `android#72`. ([#112](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/112))
+
 ## [0.5.0] - 28 Sep 2026
 
 - Fixed missing accents and ñ in the UI texts of Login, Create trip, Active trip, Trips, History, Perfil (Favoritos and the password dialog) and the map-confirm dialog ("Ubicación actual", "Contraseña", "Iniciar sesión", "Mantené presionado…"). Text only — no logic, signatures or layout changed. Imperatives that were already written in voseo without the accent ("Mantene", "Revisa", "tenes") now carry it ("Mantené", "Revisá", "tenés"); the origin name fallback for new trips is now "Ubicación actual" too (trips already saved keep the old text). Closes `android#103`. ([#106](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/106))
