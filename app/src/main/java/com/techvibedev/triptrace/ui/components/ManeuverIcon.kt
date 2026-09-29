@@ -18,10 +18,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 // One of four base shapes, combined with mirroring/rotation, covers
-// Google's full Maneuver enum (trip-trace-api#70) without a distinct icon
-// per value — cheaper to build and maintain than ~15 separate icons, and
-// any maneuver Google adds later that isn't explicitly mapped below still
-// gets a sensible fallback (a straight arrow) instead of nothing at all.
+// Google's full Maneuver enum without a distinct icon per value — cheaper
+// to build and maintain than ~15 separate icons, and any maneuver Google
+// adds later that isn't explicitly mapped below still gets a sensible
+// fallback (a straight arrow) instead of nothing at all.
 private enum class ManeuverShape { STRAIGHT, TURN, UTURN, ROUNDABOUT }
 
 private data class ManeuverIconSpec(
