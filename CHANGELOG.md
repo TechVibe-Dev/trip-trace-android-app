@@ -7,7 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- Active trip: reworked the live map into a close-up, tilted, bearing-following navigation view (Waze/Maps-style) instead of a zoomed-out route overview — the same dark mode and all existing cards (Llegada estimada/Planeado, Velocidad/Salida, próxima parada/destino, Finalizar viaje) stay, now over a gradient scrim for contrast against street-level map detail. Adds a turn-by-turn instruction card at the top (icon, instruction text, distance — from `trip-trace-api#70`'s new `steps` field on `recalculate-eta`), and draws the suggested route ahead (decoded from `route_polyline`, previously fetched every 30s and discarded) instead of the recorded trail. Maneuver icons are 4 base shapes (straight/turn/u-turn/roundabout) combined with mirroring/rotation, covering Google's full `Maneuver` enum without a distinct icon per value — an unrecognized one just falls back to a straight arrow. History's post-trip route overview is unaffected. Mockup confirmed before implementation: https://claude.ai/artifact/A5pGFSAbfkXbaDuWYJiqtG. Part of `android#110`.
+- Active trip: the live map is now a close-up, tilted, bearing-following navigation view (Waze-style) instead of a zoomed-out route overview, with a turn-by-turn instruction card at the top (`trip-trace-api#70`). Dark mode and every existing card (ETA, speed, stops, Finalizar viaje) stay as they were. History's post-trip map is unaffected. Mockup confirmed before building: https://claude.ai/artifact/A5pGFSAbfkXbaDuWYJiqtG. Closes `android#110`. ([#111](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/111))
 
 ## [0.5.0] - 28 Sep 2026
 
