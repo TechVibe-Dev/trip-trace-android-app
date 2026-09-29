@@ -108,10 +108,10 @@ private const val POLL_INTERVAL_MS = 30_000L
 private const val ARRIVAL_THRESHOLD_METERS = 100.0
 
 // Close, tilted, bearing-following camera — replaces the old "fit the whole
-// recorded route" behavior (android#110), so this screen reads as a
-// close-up navigation view (Waze/Maps-style) instead of a route overview.
-// The overview is still available: History shows a trip's complete real
-// route after the fact, unaffected by this.
+// recorded route" behavior, so this screen reads as a close-up navigation
+// view (Waze/Maps-style) instead of a route overview. The overview is
+// still available: History shows a trip's complete real route after the
+// fact, unaffected by this.
 private const val NAV_ZOOM = 18.5f
 private const val NAV_TILT = 50f
 
@@ -146,10 +146,10 @@ fun ActiveTripScreen(
     var trip by remember { mutableStateOf<TripResponse?>(null) }
     var liveArrivalAt by remember { mutableStateOf<String?>(null) }
     // Route from the current position to the destination, and its turn-by-
-    // turn steps — both refreshed on every recalculate-eta poll
-    // (trip-trace-api#70). steps[0] is always "the next maneuver from
-    // here", since the route was just computed FROM the current position —
-    // no step-matching needed on this side.
+    // turn steps — both refreshed on every recalculate-eta poll. steps[0]
+    // is always "the next maneuver from here", since the route was just
+    // computed FROM the current position — no step-matching needed on this
+    // side.
     var routePolyline by remember { mutableStateOf<String?>(null) }
     var routeSteps by remember { mutableStateOf<List<RouteStepResponse>>(emptyList()) }
     var stops by remember { mutableStateOf<List<StopResponse>>(emptyList()) }
@@ -599,10 +599,9 @@ private fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Doub
 }
 
 // Google's navigationInstruction.instructions is already a complete,
-// localized, ready-to-show sentence (es-419, see trip-trace-api#70) — shown
-// verbatim, not reassembled from the maneuver type. distance_meters is
-// formatted separately below it, matching the mockup confirmed for
-// android#110 (https://claude.ai/artifact/A5pGFSAbfkXbaDuWYJiqtG).
+// localized, ready-to-show sentence — shown verbatim, not reassembled from
+// the maneuver type. distance_meters is formatted separately below it,
+// matching the confirmed mockup: https://claude.ai/artifact/A5pGFSAbfkXbaDuWYJiqtG.
 @Composable
 private fun TurnInstructionCard(step: RouteStepResponse, modifier: Modifier = Modifier) {
     Row(
@@ -706,12 +705,12 @@ private fun vectorToBitmapDescriptor(context: Context, drawableResId: Int): Bitm
 }
 
 // Live map: current position, close/tilted/bearing-following like a
-// navigation app (android#110), sourced straight from Room
-// (observeAllByTripId, ~every 3s as the tracking service records) rather
-// than the API — this needs to feel instant, not wait on the 30s sync
-// cycle above, which exists to get data to the server, not to redraw the
-// phone's own map. Fills the whole screen (agreed design) — the overlay
-// cards in the parent Box sit on top of this, not beside it.
+// navigation app, sourced straight from Room (observeAllByTripId, ~every 3s
+// as the tracking service records) rather than the API — this needs to
+// feel instant, not wait on the 30s sync cycle above, which exists to get
+// data to the server, not to redraw the phone's own map. Fills the whole
+// screen (agreed design) — the overlay cards in the parent Box sit on top
+// of this, not beside it.
 @Composable
 private fun LiveRouteMap(
     tripId: String,
@@ -750,12 +749,12 @@ private fun LiveRouteMap(
     val currentPositionMarkerState = remember { MarkerState() }
 
     // Suggested route ahead, from the latest recalculate-eta poll — the
-    // primary route line in this close-up view (android#110), replacing
-    // the previous "whole recorded trail" Polyline. flat markers' rotation
-    // is in the same absolute-bearing coordinate frame the camera's own
-    // bearing rotates the canvas by, so setting both to the same heading
-    // (below) makes the arrow point straight up on screen, same as any
-    // navigation app — no extra math needed to keep the two in sync.
+    // primary route line in this close-up view, replacing the previous
+    // "whole recorded trail" Polyline. flat markers' rotation is in the
+    // same absolute-bearing coordinate frame the camera's own bearing
+    // rotates the canvas by, so setting both to the same heading (below)
+    // makes the arrow point straight up on screen, same as any navigation
+    // app — no extra math needed to keep the two in sync.
     val suggestedRoutePoints = remember(routePolyline) {
         routePolyline?.let { decodePolyline(it) } ?: emptyList()
     }
