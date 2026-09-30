@@ -7,6 +7,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 30 Sep 2026
+
 - Active trip: the turn instruction card now moves on to the next maneuver right after each turn, instead of showing the old one until the next 30s refresh. Every `recalculate-eta` response already carried all the steps to the destination; the app now works out locally, from GPS, which step the car is on. Going off the suggested route (over ~40m away for two GPS fixes in a row) asks for a new route right away instead of waiting out the interval, with at least 10s between requests. The first route is also requested as soon as there's a GPS point, not after 30s. The regular 30s refresh stays as it is (live traffic ETA), so Google Routes usage only grows by the reroutes. ([#117](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/117))
 - Active trip: the "en X m" distance on the turn instruction card now ticks down live between the 30s polls, using the same animated position as the map, instead of only updating (and jumping) each time `recalculate-eta` responds. Closes `android#113`. ([#116](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/116))
 - Active trip: the position arrow and camera now animate smoothly between GPS updates instead of snapping — found stepping/jumping during a real driving test of `android#111`. The suggested-route line is also trimmed to start at the car's current (animated) position instead of always showing the whole thing from the last 30s poll, so it visually retreats as you drive instead of sitting fixed behind you. Closes `android#114`, `android#115`. ([#116](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/116))
