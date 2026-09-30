@@ -46,7 +46,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
@@ -62,6 +61,7 @@ import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberMarkerState
 import com.techvibedev.triptrace.R
 import com.techvibedev.triptrace.data.local.GpsPointDao
+import com.techvibedev.triptrace.data.local.GpsPointEntity
 import com.techvibedev.triptrace.data.local.TripEntity
 import com.techvibedev.triptrace.data.local.TripTraceDatabase
 import com.techvibedev.triptrace.data.model.RouteStepResponse
@@ -113,6 +113,15 @@ private const val ARRIVAL_THRESHOLD_METERS = 100.0
 // fact, unaffected by this.
 private const val NAV_ZOOM = 18.5f
 private const val NAV_TILT = 50f
+
+// How long to animate the marker/camera from one GPS point to the next,
+// instead of snapping — kept close to TripTrackingService's own GPS
+// interval (2s as of this writing) so the transition finishes right as the
+// next point tends to arrive, rather than visibly catching up or sitting
+// idle. Not read from that constant directly (different module, no shared
+// config today) — if one changes, it's worth revisiting the other.
+private const val POSITION_ANIMATION_DURATION_MS = 2_000L
+private const val POSITION_ANIMATION_FRAME_MS = 50L
 
 // Floating cards sit on top of a full-screen map (agreed design: the map is
 // the protagonist of this screen) — a flat surface color would be
@@ -577,6 +586,71 @@ private fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Doub
     return earthRadiusMeters * c
 }
 
+// Plain linear interpolation — fine for lat/lng over the short distance
+// covered between two consecutive GPS points (at most a few dozen meters).
+private fun lerp(start: Double, end: Double, fraction: Float): Double =
+    start + (end - start) * fraction
+
+// Interpolating bearing needs to go the short way around the compass —
+// naively lerping 350 -> 10 would sweep through 180 (the long way) instead
+// of through 0 (20 degrees, the actual short way). Normalizing the delta
+// into (-180, 180] first fixes that; the final `+ 360 % 360` just keeps the
+// result in the conventional 0-360 range.
+private fun lerpBearing(start: Float, end: Float, fraction: Float): Float {
+    var delta = (end - start) % 360f
+    if (delta > 180f) delta -= 360f
+    if (delta < -180f) delta += 360f
+    return (start + delta * fraction + 360f) % 360f
+}
+
+// Nearest point on a polyline to a given position, used to trim the
+// suggested-route line to "from here forward" as the car moves (instead of
+// always drawing the whole thing from where it was at the last poll).
+// Checks every segment and keeps the closest projection — routes from
+// recalculate-eta only cover a single ~30s window, at most a few km, so a
+// full scan is cheap; no need for anything smarter here.
+private fun trimRouteBehindPosition(routePoints: List<LatLng>, position: LatLng): List<LatLng> {
+    if (routePoints.size < 2) return routePoints
+
+    var bestSegmentIndex = 0
+    var bestProjection = routePoints[0]
+    var bestDistanceMeters = Double.MAX_VALUE
+
+    for (i in 0 until routePoints.size - 1) {
+        val projection = projectPointOntoSegment(position, routePoints[i], routePoints[i + 1])
+        val distanceMeters = haversineMeters(
+            position.latitude,
+            position.longitude,
+            projection.latitude,
+            projection.longitude,
+        )
+        if (distanceMeters < bestDistanceMeters) {
+            bestDistanceMeters = distanceMeters
+            bestSegmentIndex = i
+            bestProjection = projection
+        }
+    }
+
+    return listOf(bestProjection) + routePoints.drop(bestSegmentIndex + 1)
+}
+
+// Treats lat/lng as flat Cartesian coordinates to find the closest point on
+// segment a-b to the given point — a standard simplification for a segment
+// this short (part of a single route step, well under a km), same one
+// already used by the haversine-based distance checks elsewhere on this
+// screen. Not accurate enough for anything spanning a meaningful fraction
+// of the globe, but that's not what this is for.
+private fun projectPointOntoSegment(point: LatLng, a: LatLng, b: LatLng): LatLng {
+    val abx = b.longitude - a.longitude
+    val aby = b.latitude - a.latitude
+    val lengthSquared = abx * abx + aby * aby
+    if (lengthSquared == 0.0) return a
+
+    val t = (((point.longitude - a.longitude) * abx) + ((point.latitude - a.latitude) * aby)) / lengthSquared
+    val clampedT = t.coerceIn(0.0, 1.0)
+    return LatLng(a.latitude + aby * clampedT, a.longitude + abx * clampedT)
+}
+
 // Google's navigationInstruction.instructions is already a complete,
 // localized, ready-to-show sentence — shown verbatim, not reassembled from
 // the maneuver type. distance_meters is formatted separately below it,
@@ -684,7 +758,7 @@ private fun vectorToBitmapDescriptor(context: Context, drawableResId: Int): Bitm
 }
 
 // Live map: current position, close/tilted/bearing-following like a
-// navigation app, sourced straight from Room (observeAllByTripId, ~every 3s
+// navigation app, sourced straight from Room (observeAllByTripId, ~every 2s
 // as the tracking service records) rather than the API — this needs to
 // feel instant, not wait on the 30s sync cycle above, which exists to get
 // data to the server, not to redraw the phone's own map. Fills the whole
@@ -705,7 +779,6 @@ private fun LiveRouteMap(
     val context = LocalContext.current
     val points by gpsPointDao.observeAllByTripId(tripId).collectAsState(initial = emptyList())
     val cameraPositionState = rememberCameraPositionState()
-    var hasCenteredOnce by remember { mutableStateOf(false) }
     // Dark map style — Google's default palette is light and clashes with
     // the rest of the (dark-themed) app. loadRawResourceStyle just parses
     // JSON, no dependency on the Maps system being initialized (unlike
@@ -732,38 +805,104 @@ private fun LiveRouteMap(
     // drive (a continuous session recomposing many times) — earlier walking
     // tests likely each reopened the screen fresh, masking it, since a
     // fresh composition picks up whatever the latest point was at that
-    // moment. Reassigning .position explicitly below, every recomposition,
-    // mirrors exactly how the camera below is kept live.
+    // moment. Reassigning .position explicitly below, every frame, mirrors
+    // exactly how the camera is kept live.
     val currentPositionMarkerState = remember { MarkerState() }
+
+    // Where the interpolation loop below currently has the marker/camera —
+    // read by the route-trimming logic further down, so the suggested-
+    // route line's cut point always matches exactly where the (smoothly
+    // animating) arrow visually is, instead of the raw, jumpier GPS point.
+    // Null only before the very first point arrives.
+    var animatedPosition by remember { mutableStateOf<LatLng?>(null) }
+    var animatedBearing by remember { mutableStateOf(0f) }
+    // The GPS point the current animation is animating FROM — the marker
+    // was found landing on it after each update (a real driving test on
+    // android#111), since a new point simply replaced the previous one
+    // outright rather than transitioning between them.
+    var previousPoint by remember { mutableStateOf<GpsPointEntity?>(null) }
 
     // Suggested route ahead, from the latest recalculate-eta poll — the
     // primary route line in this close-up view, replacing the previous
     // "whole recorded trail" Polyline. flat markers' rotation is in the
     // same absolute-bearing coordinate frame the camera's own bearing
-    // rotates the canvas by, so setting both to the same heading (below)
-    // makes the arrow point straight up on screen, same as any navigation
-    // app — no extra math needed to keep the two in sync.
+    // rotates the canvas by, so setting both to the same heading makes the
+    // arrow point straight up on screen, same as any navigation app — no
+    // extra math needed to keep the two in sync.
     val suggestedRoutePoints = remember(routePolyline) {
         routePolyline?.let { decodePolyline(it) } ?: emptyList()
     }
-
-    LaunchedEffect(points.size) {
-        val latest = points.lastOrNull() ?: return@LaunchedEffect
-        val latLng = LatLng(latest.lat, latest.lng)
-        val target = CameraPosition.Builder()
-            .target(latLng)
-            .zoom(NAV_ZOOM)
-            .tilt(NAV_TILT)
-            .bearing(latest.bearing?.toFloat() ?: 0f)
-            .build()
-        if (!hasCenteredOnce) {
-            // First point: jump straight there — animating from the map's
-            // arbitrary default start position would be a pointless pan
-            // across the globe.
-            cameraPositionState.position = target
-            hasCenteredOnce = true
+    // Cut to start where the car currently is, instead of always drawing
+    // the whole thing from where it was at the last 30s poll — recomputed
+    // on every animation frame, using animatedPosition rather than the raw
+    // latest GPS point so the line's cut point and the arrow never visibly
+    // disagree with each other.
+    val trimmedRoutePoints = animatedPosition?.let { position ->
+        if (suggestedRoutePoints.size >= 2) {
+            trimRouteBehindPosition(suggestedRoutePoints, position)
         } else {
-            cameraPositionState.animate(CameraUpdateFactory.newCameraPosition(target), durationMs = 1000)
+            suggestedRoutePoints
+        }
+    } ?: suggestedRoutePoints
+
+    // Animates the marker and camera together, frame by frame, instead of
+    // snapping to each new GPS point — the car moves continuously, but GPS
+    // updates only arrive as discrete points every couple of seconds.
+    // Restarts cleanly if a new point arrives before this finishes:
+    // LaunchedEffect cancels and re-runs this whole block on every
+    // points.size change, and since previousPoint is reassigned right at
+    // the top, the next segment just continues on from wherever this one
+    // was headed, not from whatever frame the animation happened to reach.
+    LaunchedEffect(points.size) {
+        val newest = points.lastOrNull() ?: return@LaunchedEffect
+        val newestLatLng = LatLng(newest.lat, newest.lng)
+        val newestBearing = newest.bearing?.toFloat() ?: animatedBearing
+
+        val previous = previousPoint
+        previousPoint = newest
+
+        if (previous == null) {
+            // First point ever: jump straight there — animating from the
+            // map's arbitrary default start position would be a pointless
+            // pan across the globe.
+            animatedPosition = newestLatLng
+            animatedBearing = newestBearing
+            currentPositionMarkerState.position = newestLatLng
+            cameraPositionState.position = CameraPosition.Builder()
+                .target(newestLatLng)
+                .zoom(NAV_ZOOM)
+                .tilt(NAV_TILT)
+                .bearing(newestBearing)
+                .build()
+            return@LaunchedEffect
+        }
+
+        val fromLatLng = LatLng(previous.lat, previous.lng)
+        val fromBearing = animatedBearing
+        val startTime = System.currentTimeMillis()
+
+        while (true) {
+            val elapsed = System.currentTimeMillis() - startTime
+            val fraction = (elapsed.toFloat() / POSITION_ANIMATION_DURATION_MS).coerceIn(0f, 1f)
+
+            val position = LatLng(
+                lerp(fromLatLng.latitude, newestLatLng.latitude, fraction),
+                lerp(fromLatLng.longitude, newestLatLng.longitude, fraction),
+            )
+            val bearing = lerpBearing(fromBearing, newestBearing, fraction)
+
+            animatedPosition = position
+            animatedBearing = bearing
+            currentPositionMarkerState.position = position
+            cameraPositionState.position = CameraPosition.Builder()
+                .target(position)
+                .zoom(NAV_ZOOM)
+                .tilt(NAV_TILT)
+                .bearing(bearing)
+                .build()
+
+            if (fraction >= 1f) break
+            delay(POSITION_ANIMATION_FRAME_MS)
         }
     }
 
@@ -792,10 +931,6 @@ private fun LiveRouteMap(
             // time, since the very first composition always has zero
             // points recorded yet — is not safe.
             val navArrowIcon = remember { vectorToBitmapDescriptor(context, R.drawable.ic_nav_arrow) }
-            val latest = points.last()
-            // Reassigned every recomposition (every new point), same
-            // reasoning as the comment on currentPositionMarkerState above.
-            currentPositionMarkerState.position = LatLng(latest.lat, latest.lng)
 
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
@@ -806,9 +941,9 @@ private fun LiveRouteMap(
                 // Suggested route once available; falls back to the trail
                 // recorded so far for the brief gap before the first
                 // recalculate-eta response comes back after starting a trip.
-                if (suggestedRoutePoints.size >= 2) {
+                if (trimmedRoutePoints.size >= 2) {
                     Polyline(
-                        points = suggestedRoutePoints,
+                        points = trimmedRoutePoints,
                         color = MaterialTheme.colorScheme.primary,
                         width = 16f,
                     )
@@ -821,11 +956,7 @@ private fun LiveRouteMap(
                 Marker(
                     state = currentPositionMarkerState,
                     icon = navArrowIcon,
-                    // GPS bearing is noisy/unreliable at low or zero speed
-                    // (a known limitation, not specific to this app) — null
-                    // falls back to pointing north rather than a stale or
-                    // jittery reading.
-                    rotation = latest.bearing?.toFloat() ?: 0f,
+                    rotation = animatedBearing,
                     flat = true,
                     title = "Posición actual",
                 )
