@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -80,8 +81,10 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class TripStop(
     val label: String,
@@ -99,8 +102,33 @@ private const val MS_TO_KMH = 3.6
 // turn steps, and stop progress from the API. Chosen as a balance:
 // frequent enough that the screen feels live, infrequent enough not to
 // hammer Google Routes (each recalculate-eta is a billable-ish call, see
-// routing_service.py) or the device's radio/battery.
+// routing_service.py) or the device's radio/battery. The turn card does
+// NOT depend on this interval: each response already carries every step to
+// the destination, and the current one is advanced locally from GPS (see
+// matchRouteStep). Leaving the route triggers an early refresh instead of
+// waiting out the interval.
 private const val POLL_INTERVAL_MS = 30_000L
+
+// Beyond this distance (plus the fix's own reported accuracy, capped by
+// MAX_ACCURACY_ALLOWANCE_METERS) from the current/upcoming steps' road, the
+// car is treated as off the suggested route.
+private const val OFF_ROUTE_THRESHOLD_METERS = 40.0
+private const val MAX_ACCURACY_ALLOWANCE_METERS = 30.0
+
+// Consecutive off-route GPS points (one every ~2-3s) needed before asking
+// for a new route, so a single stray fix doesn't trigger a reroute.
+private const val OFF_ROUTE_CONFIRM_POINTS = 2
+
+// Minimum gap between two recalculate-eta calls, whatever triggered them.
+// Caps the worst case (e.g. driving in circles off route) at 6 calls/min
+// instead of one per GPS fix.
+private const val MIN_REFRESH_GAP_MS = 10_000L
+
+// How many steps past the current one are considered when matching the
+// car's position to a step. Small on purpose: a later step that happens to
+// run close by (a U-turn, a parallel street) shouldn't be able to steal the
+// match from the one actually being driven.
+private const val STEP_LOOKAHEAD = 3
 
 // Same 100m radius the API already uses server-side to mark a stop
 // reached, for consistency between what the server considers "arrived" and
@@ -161,6 +189,21 @@ fun ActiveTripScreen(
     // side.
     var routePolyline by remember { mutableStateOf<String?>(null) }
     var routeSteps by remember { mutableStateOf<List<RouteStepResponse>>(emptyList()) }
+    // Each step's own road geometry, decoded once per response. Used to
+    // work out locally which step the car is on, so the turn card moves on
+    // to the next maneuver right after a turn instead of waiting for the
+    // next recalculate-eta response.
+    val stepPolylines = remember(routeSteps) { routeSteps.map { decodePolyline(it.polyline) } }
+    // Index into routeSteps of the maneuver being approached. Reset to 0 on
+    // every new response (that route starts at the car's position), only
+    // ever moves forward in between.
+    var currentStepIndex by remember { mutableStateOf(0) }
+    var offRoutePointCount by remember { mutableStateOf(0) }
+    var hasRequestedInitialRoute by remember { mutableStateOf(false) }
+    // Early refresh requests for the poll loop below (off route, first GPS
+    // fix). Conflated: several requests before the loop gets to them still
+    // mean a single refresh.
+    val refreshRequests = remember { Channel<Unit>(Channel.CONFLATED) }
     var stops by remember { mutableStateOf<List<StopResponse>>(emptyList()) }
     var isEnding by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -237,8 +280,18 @@ fun ActiveTripScreen(
     // LaunchedEffect — cancelled automatically once the trip ends and this
     // screen leaves composition.
     LaunchedEffect(tripId) {
+        var lastRefreshAtMs = 0L
         while (true) {
-            delay(POLL_INTERVAL_MS)
+            // Whichever comes first: the regular interval, or an early
+            // request from the off-route check below.
+            withTimeoutOrNull(POLL_INTERVAL_MS) { refreshRequests.receive() }
+            val sinceLastRefreshMs = SystemClock.elapsedRealtime() - lastRefreshAtMs
+            if (sinceLastRefreshMs < MIN_REFRESH_GAP_MS) {
+                delay(MIN_REFRESH_GAP_MS - sinceLastRefreshMs)
+            }
+            // Anything requested while waiting is covered by this refresh.
+            refreshRequests.tryReceive()
+            lastRefreshAtMs = SystemClock.elapsedRealtime()
 
             val unsyncedPoints = gpsPointDao.getUnsyncedByTripId(tripId)
             if (unsyncedPoints.isNotEmpty()) {
@@ -256,8 +309,43 @@ fun ActiveTripScreen(
                 liveArrivalAt = eta.calculatedArrivalAt
                 routePolyline = eta.routePolyline
                 routeSteps = eta.steps
+                currentStepIndex = 0
+                offRoutePointCount = 0
             }
             tripRepository.getStops(tripId).onSuccess { stops = it }
+        }
+    }
+
+    // On every new GPS point: advance the turn card when the car has moved
+    // onto a later step, or ask for a new route once it's clearly off the
+    // current one. Uses the raw point rather than the animated position —
+    // scanning step polylines every frame would be wasted work, and GPS
+    // only changes every couple of seconds anyway.
+    LaunchedEffect(latestPoint, stepPolylines) {
+        val point = latestPoint ?: return@LaunchedEffect
+        if (stepPolylines.isEmpty()) {
+            // No route yet: ask for one as soon as there's a position,
+            // instead of waiting out the first full interval. Only once —
+            // if that fails, the regular interval keeps retrying.
+            if (!hasRequestedInitialRoute) {
+                hasRequestedInitialRoute = true
+                refreshRequests.trySend(Unit)
+            }
+            return@LaunchedEffect
+        }
+        val match = matchRouteStep(stepPolylines, currentStepIndex, LatLng(point.lat, point.lng))
+        val accuracyAllowance = (point.accuracy ?: 0.0).coerceIn(0.0, MAX_ACCURACY_ALLOWANCE_METERS)
+        if (match == null || match.distanceMeters > OFF_ROUTE_THRESHOLD_METERS + accuracyAllowance) {
+            offRoutePointCount += 1
+            if (offRoutePointCount >= OFF_ROUTE_CONFIRM_POINTS) {
+                offRoutePointCount = 0
+                refreshRequests.trySend(Unit)
+            }
+        } else {
+            offRoutePointCount = 0
+            if (match.stepIndex > currentStepIndex) {
+                currentStepIndex = match.stepIndex
+            }
         }
     }
 
@@ -349,16 +437,11 @@ fun ActiveTripScreen(
             )
         }
     }
-    val nextStep = routeSteps.firstOrNull()
+    val nextStep = routeSteps.getOrNull(currentStepIndex)
     // The maneuver point is always the LAST point of the current step's own
     // polyline — a step's road segment ends exactly where its maneuver
-    // happens (the next step's polyline picks up from there). Only
-    // recomputed when routeSteps itself changes (i.e. once per 30s poll),
-    // not every frame — decoding a polyline is cheap, but there's no reason
-    // to redo it 20x/sec when the input hasn't changed.
-    val nextManeuverPoint = remember(nextStep) {
-        nextStep?.polyline?.let { decodePolyline(it) }?.lastOrNull()
-    }
+    // happens (the next step's polyline picks up from there).
+    val nextManeuverPoint = stepPolylines.getOrNull(currentStepIndex)?.lastOrNull()
     // Ticks down between polls using the same animated position driving the
     // map (android#113) — falls back to the API's own last-known distance
     // before the first frame, or if a maneuver point isn't available yet.
@@ -662,6 +745,44 @@ private fun trimRouteBehindPosition(routePoints: List<LatLng>, position: LatLng)
     }
 
     return listOf(bestProjection) + routePoints.drop(bestSegmentIndex + 1)
+}
+
+private data class RouteStepMatch(val stepIndex: Int, val distanceMeters: Double)
+
+// Which of the current and next few steps the position lies closest to,
+// and how far from that step's road it is. Null only if none of them has
+// any geometry. On a tie (right at a maneuver point, where one step's
+// polyline ends and the next begins) the earlier step wins, so the card
+// only moves on once the car is actually past the turn.
+private fun matchRouteStep(stepPolylines: List<List<LatLng>>, fromIndex: Int, position: LatLng): RouteStepMatch? {
+    var best: RouteStepMatch? = null
+    val lastIndex = minOf(fromIndex + STEP_LOOKAHEAD, stepPolylines.size - 1)
+    for (index in fromIndex..lastIndex) {
+        val distanceMeters = distanceToPolylineMeters(stepPolylines[index], position) ?: continue
+        if (best == null || distanceMeters < best.distanceMeters) {
+            best = RouteStepMatch(index, distanceMeters)
+        }
+    }
+    return best
+}
+
+private fun distanceToPolylineMeters(points: List<LatLng>, position: LatLng): Double? {
+    if (points.isEmpty()) return null
+    if (points.size == 1) {
+        return haversineMeters(position.latitude, position.longitude, points[0].latitude, points[0].longitude)
+    }
+    var bestDistanceMeters = Double.MAX_VALUE
+    for (i in 0 until points.size - 1) {
+        val projection = projectPointOntoSegment(position, points[i], points[i + 1])
+        val distanceMeters = haversineMeters(
+            position.latitude,
+            position.longitude,
+            projection.latitude,
+            projection.longitude,
+        )
+        if (distanceMeters < bestDistanceMeters) bestDistanceMeters = distanceMeters
+    }
+    return bestDistanceMeters
 }
 
 // Treats lat/lng as flat Cartesian coordinates to find the closest point on
