@@ -7,6 +7,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Active trip: the live map is now a close-up, tilted, bearing-following navigation view (Waze-style) instead of a zoomed-out route overview, with a turn-by-turn instruction card at the top (`trip-trace-api#70`). Dark mode and every existing card (ETA, speed, stops, Finalizar viaje) stay as they were. History's post-trip map is unaffected. Mockup confirmed before building: https://claude.ai/artifact/A5pGFSAbfkXbaDuWYJiqtG. Closes `android#110`. ([#111](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/111))
+
 ## [0.5.0] - 28 Sep 2026
 
 - Fixed missing accents and ñ in the UI texts of Login, Create trip, Active trip, Trips, History, Perfil (Favoritos and the password dialog) and the map-confirm dialog ("Ubicación actual", "Contraseña", "Iniciar sesión", "Mantené presionado…"). Text only — no logic, signatures or layout changed. Imperatives that were already written in voseo without the accent ("Mantene", "Revisa", "tenes") now carry it ("Mantené", "Revisá", "tenés"); the origin name fallback for new trips is now "Ubicación actual" too (trips already saved keep the old text). Closes `android#103`. ([#106](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/106))
