@@ -7,6 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Active trip: the position arrow and camera now animate smoothly between GPS updates instead of snapping — found stepping/jumping during a real driving test of `android#111`. The suggested-route line is also trimmed to start at the car's current (animated) position instead of always showing the whole thing from the last 30s poll, so it visually retreats as you drive instead of sitting fixed behind you. Closes `android#114`, `android#115`.
 - Active trip: the live map is now a close-up, tilted, bearing-following navigation view (Waze-style) instead of a zoomed-out route overview, with a turn-by-turn instruction card at the top (`trip-trace-api#70`). Dark mode and every existing card (ETA, speed, stops, Finalizar viaje) stay as they were. History's post-trip map is unaffected. Mockup confirmed before building: https://claude.ai/artifact/A5pGFSAbfkXbaDuWYJiqtG. Closes `android#110`. ([#111](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/111))
 
 ## [0.5.0] - 28 Sep 2026
