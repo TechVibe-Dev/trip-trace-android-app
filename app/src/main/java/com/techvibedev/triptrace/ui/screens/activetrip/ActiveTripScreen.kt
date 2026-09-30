@@ -77,6 +77,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlinx.coroutines.delay
@@ -179,6 +180,12 @@ fun ActiveTripScreen(
     // to finish, covering both "kept driving" and "never really arrives".
     var hasPromptedArrival by remember { mutableStateOf(false) }
     var showArrivalDialog by remember { mutableStateOf(false) }
+    // Updated every animation frame by LiveRouteMap (via onPositionUpdate)
+    // — used below to compute a live "distance to next turn" that ticks
+    // down smoothly instead of only jumping every 30s poll, same idea as
+    // the route trimming inside LiveRouteMap, just surfaced up here since
+    // TurnInstructionCard lives in this composable, not that one.
+    var currentAnimatedPosition by remember { mutableStateOf<LatLng?>(null) }
     val scope = rememberCoroutineScope()
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -343,6 +350,28 @@ fun ActiveTripScreen(
         }
     }
     val nextStep = routeSteps.firstOrNull()
+    // The maneuver point is always the LAST point of the current step's own
+    // polyline — a step's road segment ends exactly where its maneuver
+    // happens (the next step's polyline picks up from there). Only
+    // recomputed when routeSteps itself changes (i.e. once per 30s poll),
+    // not every frame — decoding a polyline is cheap, but there's no reason
+    // to redo it 20x/sec when the input hasn't changed.
+    val nextManeuverPoint = remember(nextStep) {
+        nextStep?.polyline?.let { decodePolyline(it) }?.lastOrNull()
+    }
+    // Ticks down between polls using the same animated position driving the
+    // map (android#113) — falls back to the API's own last-known distance
+    // before the first frame, or if a maneuver point isn't available yet.
+    val liveStepDistanceMeters = currentAnimatedPosition?.let { position ->
+        nextManeuverPoint?.let { maneuverPoint ->
+            haversineMeters(
+                position.latitude,
+                position.longitude,
+                maneuverPoint.latitude,
+                maneuverPoint.longitude,
+            ).roundToInt()
+        }
+    } ?: nextStep?.distanceMeters
 
     Box(modifier = Modifier.fillMaxSize()) {
         LiveRouteMap(
@@ -354,6 +383,7 @@ fun ActiveTripScreen(
             originLng = currentTrip?.originLng,
             destinationLat = currentTrip?.destinationLat,
             destinationLng = currentTrip?.destinationLng,
+            onPositionUpdate = { currentAnimatedPosition = it },
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -365,7 +395,7 @@ fun ActiveTripScreen(
         ) {
             Column {
                 if (nextStep != null) {
-                    TurnInstructionCard(step = nextStep)
+                    TurnInstructionCard(step = nextStep, distanceMeters = liveStepDistanceMeters ?: nextStep.distanceMeters)
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
@@ -653,10 +683,13 @@ private fun projectPointOntoSegment(point: LatLng, a: LatLng, b: LatLng): LatLng
 
 // Google's navigationInstruction.instructions is already a complete,
 // localized, ready-to-show sentence — shown verbatim, not reassembled from
-// the maneuver type. distance_meters is formatted separately below it,
-// matching the confirmed mockup: https://claude.ai/artifact/A5pGFSAbfkXbaDuWYJiqtG.
+// the maneuver type. distanceMeters is passed in separately rather than
+// read from step.distanceMeters directly, so the caller can supply a live,
+// locally-recomputed value (android#113) instead of the raw, only-every-
+// 30s API figure. Matches the confirmed mockup:
+// https://claude.ai/artifact/A5pGFSAbfkXbaDuWYJiqtG.
 @Composable
-private fun TurnInstructionCard(step: RouteStepResponse, modifier: Modifier = Modifier) {
+private fun TurnInstructionCard(step: RouteStepResponse, distanceMeters: Int, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -678,7 +711,7 @@ private fun TurnInstructionCard(step: RouteStepResponse, modifier: Modifier = Mo
                 color = MaterialTheme.colorScheme.onPrimary,
             )
             Text(
-                text = formatStepDistance(step.distanceMeters),
+                text = formatStepDistance(distanceMeters),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
             )
@@ -774,6 +807,10 @@ private fun LiveRouteMap(
     originLng: Double?,
     destinationLat: Double?,
     destinationLng: Double?,
+    // Called every animation frame with wherever the marker/camera
+    // currently are — lets ActiveTripScreen compute a live distance to the
+    // next turn (android#113) without duplicating the animation loop.
+    onPositionUpdate: (LatLng) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -874,6 +911,7 @@ private fun LiveRouteMap(
                 .tilt(NAV_TILT)
                 .bearing(newestBearing)
                 .build()
+            onPositionUpdate(newestLatLng)
             return@LaunchedEffect
         }
 
@@ -900,6 +938,7 @@ private fun LiveRouteMap(
                 .tilt(NAV_TILT)
                 .bearing(bearing)
                 .build()
+            onPositionUpdate(position)
 
             if (fraction >= 1f) break
             delay(POSITION_ANIMATION_FRAME_MS)
