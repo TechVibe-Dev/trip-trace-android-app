@@ -67,7 +67,7 @@ fun ServerWakingBanner(modifier: Modifier = Modifier) {
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 Text(
-                    text = "El servidor se está despertando, puede tardar hasta un minuto.",
+                    text = "Iniciando servicio, puede tardar unos minutos...",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

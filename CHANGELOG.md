@@ -9,7 +9,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- API calls now wait up to 90s for a response instead of OkHttp's default 10s, so the first call after the API wakes up from sleeping on Render's free plan (~1 min) no longer fails with a connection error. A banner, "El servidor se está despertando, puede tardar hasta un minuto.", shows while any call has been waiting more than 10s. The app also pings `GET /health` each time it comes to the foreground, so a sleeping API starts booting before the first real request. ([#124](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/124))
+- API calls now wait up to 90s for a response instead of OkHttp's default 10s, so the first call after the API wakes up from sleeping on Render's free plan (~1 min) no longer fails with a connection error. A banner, "Iniciando servicio, puede tardar unos minutos...", shows while any call has been waiting more than 10s. The app also pings `GET /health` each time it comes to the foreground, so a sleeping API starts booting before the first real request. ([#124](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/124))
 
 ## [0.6.0] - 30 Sep 2026
 
