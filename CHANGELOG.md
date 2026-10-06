@@ -9,6 +9,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Bumped `com.google.maps.android:maps-compose` from 3.0.0 to 9.0.0. ([#122](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/122))
 - Bumped `androidx.navigation:navigation-compose` from 2.8.4 to 2.10.2. Needs core-ktx 1.19.1 from [#120](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/120), since it pulls in an `androidx.activity` that extends classes only newer `androidx.core` has. ([#123](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/123))
 - Bumped `androidx.core:core-ktx` from 1.15.0 to 1.19.1. Needs the toolchain upgrade from [#125](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/125). ([#120](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/120))
 - Upgraded the build toolchain to Android Gradle Plugin 9.1.0, Gradle 9.4.1, Kotlin 2.4.20 and KSP 2.3.12, and compileSdk to 37 (targetSdk stays at 35, so runtime behavior on devices doesn't change). Needed by newer AndroidX and Maps libraries (core-ktx 1.19, navigation-compose 2.10, maps-compose 9), which refuse to build on older ones. AGP 9 compiles Kotlin itself, so the separate `kotlin-android` plugin is gone. Part of `android#21`. ([#125](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/125))
