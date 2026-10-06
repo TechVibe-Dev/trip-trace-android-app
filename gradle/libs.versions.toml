@@ -13,7 +13,7 @@ ksp = "2.0.21-1.0.28"
 navigationCompose = "2.8.4"
 datastore = "1.1.1"
 playServicesLocation = "21.2.0"
-mapsCompose = "3.0.0"
+mapsCompose = "9.0.0"
 playServicesMaps = "20.0.0"
 
 [libraries]
