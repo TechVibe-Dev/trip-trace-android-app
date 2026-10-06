@@ -7,6 +7,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Upgraded the build toolchain to Android Gradle Plugin 9.1.0, Gradle 9.4.1, Kotlin 2.4.20 and KSP 2.3.12, and compileSdk to 37 (targetSdk stays at 35, so runtime behavior on devices doesn't change). Needed by newer AndroidX and Maps libraries (core-ktx 1.19, navigation-compose 2.10, maps-compose 9), which refuse to build on older ones. AGP 9 compiles Kotlin itself, so the separate `kotlin-android` plugin is gone. Part of `android#21`. ([#125](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/125))
+
+- API calls now wait up to 90s for a response instead of OkHttp's default 10s, so the first call after the API wakes up from sleeping on Render's free plan (~1 min) no longer fails with a connection error. A banner, "Iniciando servicio, puede tardar unos minutos...", shows while any call has been waiting more than 10s. The app also pings `GET /health` each time it comes to the foreground, so a sleeping API starts booting before the first real request. ([#124](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/124))
+
 ## [0.6.0] - 30 Sep 2026
 
 - Active trip: the turn instruction card now moves on to the next maneuver right after each turn, instead of showing the old one until the next 30s refresh. Every `recalculate-eta` response already carried all the steps to the destination; the app now works out locally, from GPS, which step the car is on. Going off the suggested route (over ~40m away for two GPS fixes in a row) asks for a new route right away instead of waiting out the interval, with at least 10s between requests. The first route is also requested as soon as there's a GPS point, not after 30s. The regular 30s refresh stays as it is (live traffic ETA), so Google Routes usage only grows by the reroutes. ([#117](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/117))
