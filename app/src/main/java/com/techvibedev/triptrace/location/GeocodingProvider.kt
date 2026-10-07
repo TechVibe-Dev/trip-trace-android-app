@@ -43,6 +43,35 @@ class GeocodingProvider(private val context: Context) {
             }
         }
 
+    // Several candidates for a typed address, for screens that let the user
+    // pick the right one from a list (Android Auto's destination search)
+    // instead of trusting the first match blindly.
+    suspend fun search(query: String, maxResults: Int = 5): Result<List<GeocodedPlace>> =
+        withContext(Dispatchers.IO) {
+            if (!Geocoder.isPresent()) {
+                return@withContext Result.failure(
+                    IllegalStateException("Geocoding no disponible en este dispositivo"),
+                )
+            }
+            try {
+                val geocoder = Geocoder(context, Locale.getDefault())
+                @Suppress("DEPRECATION")
+                val results = geocoder.getFromLocationName(query, maxResults).orEmpty()
+                Result.success(
+                    results.map { address ->
+                        GeocodedPlace(
+                            name = shortName(address) ?: query,
+                            detail = address.locality ?: address.adminArea,
+                            lat = address.latitude,
+                            lng = address.longitude,
+                        )
+                    },
+                )
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     // The other direction: lat/lng -> a readable address, used to name the
     // origin when it comes from GPS instead of typed text (android#69).
     // Prefers "calle y numero" (getThoroughfare + getSubThoroughfare) since
@@ -72,13 +101,22 @@ class GeocodingProvider(private val context: Context) {
             }
         }
 
-    private fun formatAddress(address: Address): String {
+    private fun formatAddress(address: Address): String = shortName(address) ?: "Ubicacion actual"
+
+    private fun shortName(address: Address): String? {
         val street = address.thoroughfare
         val number = address.subThoroughfare
         return when {
             street != null && number != null -> "$street $number"
             street != null -> street
-            else -> address.getAddressLine(0) ?: "Ubicacion actual"
+            else -> address.getAddressLine(0)
         }
     }
 }
+
+data class GeocodedPlace(
+    val name: String,
+    val detail: String?,
+    val lat: Double,
+    val lng: Double,
+)

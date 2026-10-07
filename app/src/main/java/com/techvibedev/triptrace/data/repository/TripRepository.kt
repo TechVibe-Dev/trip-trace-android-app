@@ -40,6 +40,16 @@ class TripRepository(
         }
     }
 
+    // Android Auto opens straight into a trip that's already running (e.g.
+    // one started on the phone before connecting to the car).
+    suspend fun getInProgressTrips(): Result<List<TripResponse>> {
+        return try {
+            Result.success(apiService.listTrips(authHeader(), statusFilter = "IN_PROGRESS"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun getCompletedTrips(): Result<List<TripResponse>> {
         return try {
             Result.success(apiService.listTrips(authHeader(), statusFilter = "COMPLETED"))

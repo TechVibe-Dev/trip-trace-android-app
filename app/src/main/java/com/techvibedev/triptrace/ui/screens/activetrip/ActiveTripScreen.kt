@@ -63,24 +63,29 @@ import com.google.maps.android.compose.rememberMarkerState
 import com.techvibedev.triptrace.R
 import com.techvibedev.triptrace.data.local.GpsPointDao
 import com.techvibedev.triptrace.data.local.GpsPointEntity
-import com.techvibedev.triptrace.data.local.TripEntity
 import com.techvibedev.triptrace.data.local.TripTraceDatabase
 import com.techvibedev.triptrace.data.model.RouteStepResponse
 import com.techvibedev.triptrace.data.model.StopResponse
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
-import com.techvibedev.triptrace.service.TripTrackingService
+import com.techvibedev.triptrace.trip.ARRIVAL_THRESHOLD_METERS
+import com.techvibedev.triptrace.trip.MAX_ACCURACY_ALLOWANCE_METERS
+import com.techvibedev.triptrace.trip.MIN_REFRESH_GAP_MS
+import com.techvibedev.triptrace.trip.OFF_ROUTE_CONFIRM_POINTS
+import com.techvibedev.triptrace.trip.OFF_ROUTE_THRESHOLD_METERS
+import com.techvibedev.triptrace.trip.POLL_INTERVAL_MS
+import com.techvibedev.triptrace.trip.ensureTripSavedLocallyAndStartTracking
+import com.techvibedev.triptrace.trip.finishTrip
+import com.techvibedev.triptrace.trip.haversineMeters
+import com.techvibedev.triptrace.trip.matchRouteStep
+import com.techvibedev.triptrace.trip.syncPendingGpsPoints
+import com.techvibedev.triptrace.trip.trimRouteBehindPosition
 import com.techvibedev.triptrace.ui.components.ManeuverIcon
 import com.techvibedev.triptrace.util.decodePolyline
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.pow
 import kotlin.math.roundToInt
-import kotlin.math.sin
-import kotlin.math.sqrt
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -96,44 +101,6 @@ data class TripStop(
 // same conversion applied server-side, needed again here since this reads
 // Room directly and never goes through the API.
 private const val MS_TO_KMH = 3.6
-
-// How often, while a trip is in progress, we (a) upload any GPS points Room
-// has recorded since the last tick and (b) refresh the live ETA, turn-by-
-// turn steps, and stop progress from the API. Chosen as a balance:
-// frequent enough that the screen feels live, infrequent enough not to
-// hammer Google Routes (each recalculate-eta is a billable-ish call, see
-// routing_service.py) or the device's radio/battery. The turn card does
-// NOT depend on this interval: each response already carries every step to
-// the destination, and the current one is advanced locally from GPS (see
-// matchRouteStep). Leaving the route triggers an early refresh instead of
-// waiting out the interval.
-private const val POLL_INTERVAL_MS = 30_000L
-
-// Beyond this distance (plus the fix's own reported accuracy, capped by
-// MAX_ACCURACY_ALLOWANCE_METERS) from the current/upcoming steps' road, the
-// car is treated as off the suggested route.
-private const val OFF_ROUTE_THRESHOLD_METERS = 40.0
-private const val MAX_ACCURACY_ALLOWANCE_METERS = 30.0
-
-// Consecutive off-route GPS points (one every ~2-3s) needed before asking
-// for a new route, so a single stray fix doesn't trigger a reroute.
-private const val OFF_ROUTE_CONFIRM_POINTS = 2
-
-// Minimum gap between two recalculate-eta calls, whatever triggered them.
-// Caps the worst case (e.g. driving in circles off route) at 6 calls/min
-// instead of one per GPS fix.
-private const val MIN_REFRESH_GAP_MS = 10_000L
-
-// How many steps past the current one are considered when matching the
-// car's position to a step. Small on purpose: a later step that happens to
-// run close by (a U-turn, a parallel street) shouldn't be able to steal the
-// match from the one actually being driven.
-private const val STEP_LOOKAHEAD = 3
-
-// Same 100m radius the API already uses server-side to mark a stop
-// reached, for consistency between what the server considers "arrived" and
-// what this screen prompts about.
-private const val ARRIVAL_THRESHOLD_METERS = 100.0
 
 // Close, tilted, bearing-following camera — replaces the old "fit the whole
 // recorded route" behavior, so this screen reads as a close-up navigation
@@ -293,15 +260,7 @@ fun ActiveTripScreen(
             refreshRequests.tryReceive()
             lastRefreshAtMs = SystemClock.elapsedRealtime()
 
-            val unsyncedPoints = gpsPointDao.getUnsyncedByTripId(tripId)
-            if (unsyncedPoints.isNotEmpty()) {
-                // Best-effort: a failed upload leaves these unsynced in
-                // Room, so the next tick retries them alongside whatever's
-                // been recorded since — no data is lost, just delayed.
-                tripRepository.uploadGpsPoints(tripId, unsyncedPoints).onSuccess {
-                    gpsPointDao.markSynced(unsyncedPoints.map { point -> point.id })
-                }
-            }
+            syncPendingGpsPoints(context, tripId, tripRepository)
 
             // Both best-effort too: a hiccup here just means the screen
             // keeps showing the last value it had until the next tick.
@@ -374,42 +333,7 @@ fun ActiveTripScreen(
         isEnding = true
         errorMessage = null
         scope.launch {
-            // Sync (Room -> API) happens here too, right before finalizing:
-            // /finalize computes distance/speed stats from whatever GPS
-            // points already exist on the server, so without uploading
-            // first, those stats always come back null. The periodic sync
-            // above should have already caught most points, but this makes
-            // sure anything from the last partial interval isn't lost.
-            val unsyncedPoints = gpsPointDao.getUnsyncedByTripId(tripId)
-            if (unsyncedPoints.isNotEmpty()) {
-                val uploadResult = tripRepository.uploadGpsPoints(tripId, unsyncedPoints)
-                uploadResult.onSuccess {
-                    gpsPointDao.markSynced(unsyncedPoints.map { point -> point.id })
-                }
-            }
-
-            val endResult = tripRepository.endTrip(tripId)
-            if (endResult.isSuccess) {
-                // Also best-effort — a failure here leaves the trip
-                // correctly COMPLETED with null stats, same degraded state
-                // as before Sync existed, not something worth blocking on.
-                tripRepository.finalizeTrip(tripId)
-            }
-
-            // Local cleanup: once every point for this trip is confirmed
-            // synced (whether it already was, or just got uploaded above),
-            // Room's copy has served its purpose — History and the web
-            // frontend both read from the API, never from here. Leaves
-            // TripEntity itself in place (see GpsPointDao.deleteByTripId)
-            // so sensor_readings, a separate FK child of it kept for
-            // manual review (see HistoryScreen), isn't swept up too. If the
-            // upload failed and some points are still unsynced, nothing is
-            // deleted — same retry-later posture as the rest of Sync.
-            if (gpsPointDao.getUnsyncedByTripId(tripId).isEmpty()) {
-                gpsPointDao.deleteByTripId(tripId)
-            }
-
-            TripTrackingService.stop(context)
+            val endResult = finishTrip(context, tripId, tripRepository)
             isEnding = false
             endResult.fold(
                 onSuccess = { onTripEnded() },
@@ -629,53 +553,6 @@ fun ActiveTripScreen(
     }
 }
 
-// GpsPointEntity has a foreign key on tripId pointing at Room's own trips
-// table — but trips are otherwise only known through the API, never
-// inserted into Room. Without this, the very first point the tracking
-// service tries to save crashes the app with SQLiteConstraintException
-// (FOREIGN KEY constraint failed). Fetching and saving the trip here,
-// before starting the service, closes that gap.
-private suspend fun ensureTripSavedLocallyAndStartTracking(
-    context: Context,
-    tripId: String,
-    tripRepository: TripRepository,
-): Result<TripResponse> {
-    val result = tripRepository.getTrip(tripId)
-    result.onSuccess { trip ->
-        val tripDao = TripTraceDatabase.getInstance(context.applicationContext).tripDao()
-        tripDao.insert(trip.toEntity(syncedAt = OffsetDateTime.now().toString()))
-        TripTrackingService.start(context, tripId)
-    }
-    return result
-}
-
-private fun TripResponse.toEntity(syncedAt: String): TripEntity {
-    return TripEntity(
-        id = id,
-        userId = userId,
-        originName = originName,
-        originLat = originLat,
-        originLng = originLng,
-        destinationName = destinationName,
-        destinationLat = destinationLat,
-        destinationLng = destinationLng,
-        plannedRoutePolyline = plannedRoutePolyline,
-        status = status,
-        plannedDepartureAt = plannedDepartureAt,
-        desiredArrivalAt = desiredArrivalAt,
-        calculatedArrivalAt = calculatedArrivalAt,
-        startedAt = startedAt,
-        endedAt = endedAt,
-        distanceKm = distanceKm,
-        maxSpeed = maxSpeed,
-        minSpeed = minSpeed,
-        avgSpeed = avgSpeed,
-        createdAt = createdAt,
-        updatedAt = updatedAt,
-        syncedAt = syncedAt,
-    )
-}
-
 // actual_arrival_at is set server-side once a synced GPS point lands within
 // 100m of the stop — this is a pure display mapping, no client-side
 // proximity logic.
@@ -685,18 +562,6 @@ private fun StopResponse.toTripStop(): TripStop {
         timeLabel = formatLocalTime(actualArrivalAt ?: plannedArrivalAt),
         reached = actualArrivalAt != null,
     )
-}
-
-// Standard great-circle distance — no equivalent existed yet in the Android
-// app itself (server-side stop detection does its own version in Python).
-private fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
-    val earthRadiusMeters = 6_371_000.0
-    val dLat = Math.toRadians(lat2 - lat1)
-    val dLng = Math.toRadians(lng2 - lng1)
-    val a = sin(dLat / 2).pow(2) +
-        cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLng / 2).pow(2)
-    val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-    return earthRadiusMeters * c
 }
 
 // Plain linear interpolation — fine for lat/lng over the short distance
@@ -714,92 +579,6 @@ private fun lerpBearing(start: Float, end: Float, fraction: Float): Float {
     if (delta > 180f) delta -= 360f
     if (delta < -180f) delta += 360f
     return (start + delta * fraction + 360f) % 360f
-}
-
-// Nearest point on a polyline to a given position, used to trim the
-// suggested-route line to "from here forward" as the car moves (instead of
-// always drawing the whole thing from where it was at the last poll).
-// Checks every segment and keeps the closest projection — routes from
-// recalculate-eta only cover a single ~30s window, at most a few km, so a
-// full scan is cheap; no need for anything smarter here.
-private fun trimRouteBehindPosition(routePoints: List<LatLng>, position: LatLng): List<LatLng> {
-    if (routePoints.size < 2) return routePoints
-
-    var bestSegmentIndex = 0
-    var bestProjection = routePoints[0]
-    var bestDistanceMeters = Double.MAX_VALUE
-
-    for (i in 0 until routePoints.size - 1) {
-        val projection = projectPointOntoSegment(position, routePoints[i], routePoints[i + 1])
-        val distanceMeters = haversineMeters(
-            position.latitude,
-            position.longitude,
-            projection.latitude,
-            projection.longitude,
-        )
-        if (distanceMeters < bestDistanceMeters) {
-            bestDistanceMeters = distanceMeters
-            bestSegmentIndex = i
-            bestProjection = projection
-        }
-    }
-
-    return listOf(bestProjection) + routePoints.drop(bestSegmentIndex + 1)
-}
-
-private data class RouteStepMatch(val stepIndex: Int, val distanceMeters: Double)
-
-// Which of the current and next few steps the position lies closest to,
-// and how far from that step's road it is. Null only if none of them has
-// any geometry. On a tie (right at a maneuver point, where one step's
-// polyline ends and the next begins) the earlier step wins, so the card
-// only moves on once the car is actually past the turn.
-private fun matchRouteStep(stepPolylines: List<List<LatLng>>, fromIndex: Int, position: LatLng): RouteStepMatch? {
-    var best: RouteStepMatch? = null
-    val lastIndex = minOf(fromIndex + STEP_LOOKAHEAD, stepPolylines.size - 1)
-    for (index in fromIndex..lastIndex) {
-        val distanceMeters = distanceToPolylineMeters(stepPolylines[index], position) ?: continue
-        if (best == null || distanceMeters < best.distanceMeters) {
-            best = RouteStepMatch(index, distanceMeters)
-        }
-    }
-    return best
-}
-
-private fun distanceToPolylineMeters(points: List<LatLng>, position: LatLng): Double? {
-    if (points.isEmpty()) return null
-    if (points.size == 1) {
-        return haversineMeters(position.latitude, position.longitude, points[0].latitude, points[0].longitude)
-    }
-    var bestDistanceMeters = Double.MAX_VALUE
-    for (i in 0 until points.size - 1) {
-        val projection = projectPointOntoSegment(position, points[i], points[i + 1])
-        val distanceMeters = haversineMeters(
-            position.latitude,
-            position.longitude,
-            projection.latitude,
-            projection.longitude,
-        )
-        if (distanceMeters < bestDistanceMeters) bestDistanceMeters = distanceMeters
-    }
-    return bestDistanceMeters
-}
-
-// Treats lat/lng as flat Cartesian coordinates to find the closest point on
-// segment a-b to the given point — a standard simplification for a segment
-// this short (part of a single route step, well under a km), same one
-// already used by the haversine-based distance checks elsewhere on this
-// screen. Not accurate enough for anything spanning a meaningful fraction
-// of the globe, but that's not what this is for.
-private fun projectPointOntoSegment(point: LatLng, a: LatLng, b: LatLng): LatLng {
-    val abx = b.longitude - a.longitude
-    val aby = b.latitude - a.latitude
-    val lengthSquared = abx * abx + aby * aby
-    if (lengthSquared == 0.0) return a
-
-    val t = (((point.longitude - a.longitude) * abx) + ((point.latitude - a.latitude) * aby)) / lengthSquared
-    val clampedT = t.coerceIn(0.0, 1.0)
-    return LatLng(a.latitude + aby * clampedT, a.longitude + abx * clampedT)
 }
 
 // Google's navigationInstruction.instructions is already a complete,
