@@ -9,7 +9,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Android Auto, phase 1 (plumbing only): the app now declares Car App Library support and shows a placeholder screen on the car's display, to prove the connection works before building any real screen on top. Nothing functional yet — see the issue for the rest of the plan. ([#97](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/97))
+- Android Auto: Trip Trace now works on the car's display, covering only the trip itself (login, Perfil, settings and history stay phone-only). The first screen lists the trip in progress, "Nuevo viaje" and the planned trips; opening Android Auto mid-trip goes straight to navigation. A new trip is created by picking a favorite or searching an address, always from the current location with departure now (no stops or desired arrival, which need typing), and can be started right away or saved for later. A planned trip can be started from its summary. The trip in progress shows turn-by-turn instructions with the live distance to the next maneuver, arrival time and remaining distance, over a simple map drawn by the app (route ahead, path driven, destination, car arrow), with the same rerouting, arrival prompt and "Finalizar" confirmation as the phone. The phone's active trip logic (GPS sync, step tracking, finishing a trip) now lives in shared code used by both. The session is the phone's own: if the phone is logged out, the car asks to log in there. ([#97](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/97))
 
 ### Changed
 
