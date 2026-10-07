@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android Auto: required by the navigation category to use the
+         navigation template, and to draw the map on the car's display. -->
+    <uses-permission android:name="androidx.car.app.NAVIGATION_TEMPLATES" />
+    <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />
 
     <application
         android:name=".TripTraceApplication"
@@ -45,8 +49,8 @@
             android:foregroundServiceType="location"
             android:exported="false" />
 
-        <!-- android#93 phase 1 — entry point Android Auto binds to.
-             NAVIGATION matches the app's actual purpose; that category
+        <!-- Entry point Android Auto binds to. NAVIGATION matches the
+             app's actual purpose (turn-by-turn while driving); that category
              requires Google's approval only for public Play distribution,
              not for personal sideloading via Android Auto's "unknown
              sources" developer setting. -->

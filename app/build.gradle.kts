@@ -135,10 +135,9 @@ dependencies {
     // against.
     implementation(libs.play.services.maps)
 
-    // Android Auto (Car App Library) — phase 1 of android#93. Base artifact
-    // only for now (androidx.car.app:app); no need yet for app-projected
-    // (extra Auto-specific APIs) or app-automotive (a different platform,
-    // full in-car OS, out of scope — see the issue's plan).
+    // Android Auto (Car App Library). Base artifact only (androidx.car.app:app):
+    // app-projected adds nothing this app uses, and app-automotive targets a
+    // different platform (cars running Android Automotive OS), out of scope.
     implementation(libs.androidx.car.app)
 }
 
