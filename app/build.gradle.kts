@@ -1,9 +1,9 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Base64
 import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
@@ -41,7 +41,7 @@ val mapsApiKey: String = (project.findProperty("MAPS_API_KEY") as String?)
 
 android {
     namespace = "com.techvibedev.triptrace"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.techvibedev.triptrace"
@@ -55,8 +55,8 @@ android {
         // just goes up by 1 each release rather than encoding the version
         // number itself. versionName is the human-readable one shown in
         // Settings > Apps.
-        versionCode = 2
-        versionName = "0.4.0"
+        versionCode = 4
+        versionName = "0.6.0"
 
         manifestPlaceholders["mapsApiKey"] = mapsApiKey
     }
@@ -87,12 +87,20 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
+        // Needed for BuildConfig.DEBUG, used to gate the network logging
+        // level (see RetrofitClient) — AGP 8.x no longer generates
+        // BuildConfig by default.
+        buildConfig = true
+    }
+}
+
+// AGP 9 compiles Kotlin itself (no separate kotlin-android plugin), so
+// the old android { kotlinOptions { } } block is gone.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
@@ -135,14 +143,12 @@ dependencies {
 }
 
 // maps-compose pulls in androidx.core:core-ktx/core transitively at a
-// version newer than ours (1.15.0) — that newer version requires a
-// compileSdk we're not on yet (android#21, deferred on purpose). We already
-// declare core-ktx 1.15.0 ourselves and it's confirmed compileSdk-35-safe
-// (per AndroidX's own release notes), so force every configuration to that
-// version rather than whatever maps-compose's own dependency graph asks
-// for. Narrower and more direct than hunting for an older maps-compose
-// release that happens to predate the bump — and keeps working regardless
-// of which maps-compose version we're on.
+// version newer than ours — force every configuration to the version we
+// declare ourselves, so core-ktx only moves when we bump it on purpose,
+// rather than whatever maps-compose's own dependency graph asks for.
+// Narrower and more direct than hunting for an older maps-compose release
+// that happens to predate the bump — and keeps working regardless of which
+// maps-compose version we're on.
 configurations.all {
     resolutionStrategy {
         force(

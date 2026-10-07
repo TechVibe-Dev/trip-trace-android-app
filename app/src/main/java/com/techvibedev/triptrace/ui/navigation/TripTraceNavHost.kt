@@ -1,6 +1,7 @@
 package com.techvibedev.triptrace.ui.navigation
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -23,13 +24,16 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.techvibedev.triptrace.data.network.RetrofitClient
 import com.techvibedev.triptrace.data.repository.AuthRepository
+import com.techvibedev.triptrace.data.repository.FavoritePlaceRepository
 import com.techvibedev.triptrace.data.repository.TripRepository
 import com.techvibedev.triptrace.data.session.TokenDataStore
+import com.techvibedev.triptrace.ui.components.ServerWakingBanner
 import com.techvibedev.triptrace.ui.components.TripTraceBottomNavBar
 import com.techvibedev.triptrace.ui.screens.activetrip.ActiveTripScreen
 import com.techvibedev.triptrace.ui.screens.createtrip.CreateTripScreen
 import com.techvibedev.triptrace.ui.screens.history.HistoryScreen
 import com.techvibedev.triptrace.ui.screens.login.LoginScreen
+import com.techvibedev.triptrace.ui.screens.register.RegisterScreen
 import com.techvibedev.triptrace.ui.screens.trips.TripsScreen
 import com.techvibedev.triptrace.ui.screens.user.UserScreen
 
@@ -41,6 +45,9 @@ fun TripTraceNavHost(navController: NavHostController = rememberNavController())
     val tokenDataStore = remember { TokenDataStore(context.applicationContext) }
     val authRepository = remember { AuthRepository(RetrofitClient.authApiService, tokenDataStore) }
     val tripRepository = remember { TripRepository(RetrofitClient.tripApiService, tokenDataStore) }
+    val favoritePlaceRepository = remember {
+        FavoritePlaceRepository(RetrofitClient.favoritePlaceApiService, tokenDataStore)
+    }
     // null while DataStore hasn't emitted yet (checking for a saved session).
     val isLoggedIn by authRepository.isLoggedIn.collectAsState(initial = null)
 
@@ -70,81 +77,125 @@ fun TripTraceNavHost(navController: NavHostController = rememberNavController())
             }
         },
     ) { innerPadding ->
-        if (isLoggedIn == null) {
-            Box(
+        Box(modifier = Modifier.fillMaxSize()) {
+            TripTraceNavContent(
+                navController = navController,
+                isLoggedIn = isLoggedIn,
+                innerPadding = innerPadding,
+                authRepository = authRepository,
+                tripRepository = tripRepository,
+                favoritePlaceRepository = favoritePlaceRepository,
+            )
+            // Drawn over whatever screen is showing, below the status bar.
+            ServerWakingBanner(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
-            return@Scaffold
+                    .align(Alignment.TopCenter)
+                    .padding(top = innerPadding.calculateTopPadding()),
+            )
         }
+    }
+}
 
-        NavHost(
-            navController = navController,
-            startDestination = if (isLoggedIn == true) Routes.TRIPS else Routes.LOGIN,
-            modifier = Modifier.padding(innerPadding),
+@Composable
+private fun TripTraceNavContent(
+    navController: NavHostController,
+    isLoggedIn: Boolean?,
+    innerPadding: PaddingValues,
+    authRepository: AuthRepository,
+    tripRepository: TripRepository,
+    favoritePlaceRepository: FavoritePlaceRepository,
+) {
+    if (isLoggedIn == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentAlignment = Alignment.Center,
         ) {
-            composable(Routes.LOGIN) {
-                LoginScreen(
-                    authRepository = authRepository,
-                    onLoginSuccess = {
-                        navController.navigate(Routes.TRIPS) {
-                            popUpTo(Routes.LOGIN) { inclusive = true }
-                        }
-                    },
-                )
-            }
-            composable(Routes.TRIPS) {
-                TripsScreen(
-                    tripRepository = tripRepository,
-                    onStartTrip = { tripId ->
-                        navController.navigate("${Routes.ACTIVE_TRIP}/$tripId")
-                    },
-                )
-            }
-            composable(Routes.HISTORY) {
-                HistoryScreen(tripRepository = tripRepository)
-            }
-            composable(Routes.USER) {
-                UserScreen(
-                    authRepository = authRepository,
-                    onLoggedOut = {
-                        navController.navigate(Routes.LOGIN) {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    },
-                )
-            }
-            composable(Routes.CREATE_TRIP) {
-                CreateTripScreen(
-                    tripRepository = tripRepository,
-                    onTripSaved = {
-                        navController.navigate(Routes.TRIPS) {
-                            popUpTo(Routes.TRIPS) { inclusive = true }
-                        }
-                    },
-                    onTripStarted = { tripId ->
-                        navController.navigate("${Routes.ACTIVE_TRIP}/$tripId") {
-                            popUpTo(Routes.TRIPS)
-                        }
-                    },
-                )
-            }
-            composable("${Routes.ACTIVE_TRIP}/{tripId}") { backStackEntry ->
-                val tripId = backStackEntry.arguments?.getString("tripId") ?: ""
-                ActiveTripScreen(
-                    tripId = tripId,
-                    tripRepository = tripRepository,
-                    onTripEnded = {
-                        navController.navigate(Routes.TRIPS) {
-                            popUpTo(Routes.TRIPS) { inclusive = true }
-                        }
-                    },
-                )
-            }
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    NavHost(
+        navController = navController,
+        startDestination = if (isLoggedIn == true) Routes.TRIPS else Routes.LOGIN,
+        modifier = Modifier.padding(innerPadding),
+    ) {
+        composable(Routes.LOGIN) {
+            LoginScreen(
+                authRepository = authRepository,
+                onLoginSuccess = {
+                    navController.navigate(Routes.TRIPS) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
+                },
+                onRegisterClick = { navController.navigate(Routes.REGISTER) },
+            )
+        }
+        composable(Routes.REGISTER) {
+            RegisterScreen(
+                authRepository = authRepository,
+                // Registering logs in too, so this lands where a normal login
+                // would. Popping up to LOGIN (inclusive) also drops the
+                // register screen sitting on top of it.
+                onRegistered = {
+                    navController.navigate(Routes.TRIPS) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
+                },
+                onBackToLogin = { navController.popBackStack() },
+            )
+        }
+        composable(Routes.TRIPS) {
+            TripsScreen(
+                tripRepository = tripRepository,
+                onStartTrip = { tripId ->
+                    navController.navigate("${Routes.ACTIVE_TRIP}/$tripId")
+                },
+            )
+        }
+        composable(Routes.HISTORY) {
+            HistoryScreen(tripRepository = tripRepository)
+        }
+        composable(Routes.USER) {
+            UserScreen(
+                authRepository = authRepository,
+                favoritePlaceRepository = favoritePlaceRepository,
+                onLoggedOut = {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(Routes.CREATE_TRIP) {
+            CreateTripScreen(
+                tripRepository = tripRepository,
+                favoritePlaceRepository = favoritePlaceRepository,
+                onTripSaved = {
+                    navController.navigate(Routes.TRIPS) {
+                        popUpTo(Routes.TRIPS) { inclusive = true }
+                    }
+                },
+                onTripStarted = { tripId ->
+                    navController.navigate("${Routes.ACTIVE_TRIP}/$tripId") {
+                        popUpTo(Routes.TRIPS)
+                    }
+                },
+            )
+        }
+        composable("${Routes.ACTIVE_TRIP}/{tripId}") { backStackEntry ->
+            val tripId = backStackEntry.arguments?.getString("tripId") ?: ""
+            ActiveTripScreen(
+                tripId = tripId,
+                tripRepository = tripRepository,
+                onTripEnded = {
+                    navController.navigate(Routes.TRIPS) {
+                        popUpTo(Routes.TRIPS) { inclusive = true }
+                    }
+                },
+            )
         }
     }
 }

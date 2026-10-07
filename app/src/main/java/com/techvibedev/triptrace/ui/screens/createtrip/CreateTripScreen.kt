@@ -36,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,27 +51,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.MapStyleOptions
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.rememberCameraPositionState
-import com.google.maps.android.compose.rememberMarkerState
-import com.techvibedev.triptrace.R
+import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
 import com.techvibedev.triptrace.data.model.StopCreateRequest
 import com.techvibedev.triptrace.data.model.TripCreateRequest
+import com.techvibedev.triptrace.data.repository.FavoritePlaceRepository
 import com.techvibedev.triptrace.data.repository.TripRepository
 import com.techvibedev.triptrace.location.GeocodingProvider
 import com.techvibedev.triptrace.location.LocationProvider
+import com.techvibedev.triptrace.ui.components.FavoriteAwareTextField
+import com.techvibedev.triptrace.ui.components.LocationConfirmDialog
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -81,23 +72,21 @@ import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import kotlinx.coroutines.launch
 
-// Origin still falls back to a placeholder when the user opts out of
-// "Ubicacion actual" — there's no text field for typing a custom origin
-// address yet, only the current-location toggle. Destination and stops are
-// geocoded from whatever text the user types (see GeocodingProvider). Also
-// used as the map-confirm dialog's fallback center when geocoding fails
-// outright and there's no current GPS location to center on instead.
+// Fallback center for the map-confirm dialog when geocoding fails outright
+// and there's no current GPS location to center on instead (e.g. origin
+// typed manually, with location permission denied).
 private const val PLACEHOLDER_LAT = -34.9011
 private const val PLACEHOLDER_LNG = -56.1645
 
 private const val LOG_TAG = "CreateTripScreen"
 
 // A stop as entered here — name is always required; confirmedLat/Lng are
-// set only if the user opened the map-confirm dialog for this stop and
-// dragged the pin. Both null means "not confirmed yet, resolve by
+// set either by dragging the pin in the map-confirm dialog, or directly by
+// picking a favorite (which already has known coordinates, skipping
+// geocoding entirely). Both null means "not confirmed yet, resolve by
 // geocoding the name at save time" — the same as before this feature
-// existed, so typing a stop and saving without ever touching the map still
-// works exactly as it did.
+// existed, so typing a stop and saving without ever touching the map or
+// favorites still works exactly as it did.
 private data class StopDraft(
     val name: String,
     val confirmedLat: Double? = null,
@@ -108,6 +97,7 @@ private data class StopDraft(
 // start centered on (the just-geocoded position, or a previously confirmed
 // one if reopening).
 private sealed class ConfirmTarget {
+    data object Origin : ConfirmTarget()
     data object Destination : ConfirmTarget()
     data class Stop(val index: Int) : ConfirmTarget()
 }
@@ -127,6 +117,7 @@ private data class MapConfirmState(
 @Composable
 fun CreateTripScreen(
     tripRepository: TripRepository,
+    favoritePlaceRepository: FavoritePlaceRepository,
     onTripSaved: () -> Unit,
     onTripStarted: (String) -> Unit,
 ) {
@@ -134,16 +125,24 @@ fun CreateTripScreen(
     val locationProvider = remember { LocationProvider(context.applicationContext) }
     val geocodingProvider = remember { GeocodingProvider(context.applicationContext) }
 
+    var favorites by remember { mutableStateOf<List<FavoritePlaceResponse>>(emptyList()) }
+
     var useCurrentLocation by remember { mutableStateOf(true) }
     var currentLat by remember { mutableStateOf<Double?>(null) }
     var currentLng by remember { mutableStateOf<Double?>(null) }
     var isLoadingLocation by remember { mutableStateOf(false) }
     var locationError by remember { mutableStateOf<String?>(null) }
+    // Only used when useCurrentLocation is false — a manual origin, same
+    // shape as destination (typed text + optionally-confirmed coords).
+    // Preserved across toggling useCurrentLocation back and forth, so
+    // switching to GPS and back doesn't lose what was already typed.
+    var originText by remember { mutableStateOf("") }
+    var originCoords by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     var destination by remember { mutableStateOf("") }
     // Set once the user confirms (optionally adjusts) the destination pin
-    // on the map — used instead of re-geocoding the text at save time.
-    // Cleared whenever the destination text changes, so a stale confirmed
-    // point can never silently apply to different text.
+    // on the map, or picks a favorite — used instead of re-geocoding the
+    // text at save time. Cleared whenever the destination text changes, so
+    // a stale confirmed point can never silently apply to different text.
     var destinationCoords by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     val stops = remember { mutableStateListOf<StopDraft>() }
     var newStop by remember { mutableStateOf("") }
@@ -164,8 +163,8 @@ fun CreateTripScreen(
     // Center for the map-confirm dialog when geocoding fails outright and
     // there's nothing found to center on instead — the user's current
     // location is a reasonable starting guess (the destination is often
-    // somewhere near where the trip starts), falling back to the same
-    // fixed placeholder the origin itself uses when GPS isn't available.
+    // somewhere near where the trip starts), falling back to a fixed
+    // placeholder when GPS isn't available either.
     fun fallbackMapCenter(): Pair<Double, Double> =
         (currentLat ?: PLACEHOLDER_LAT) to (currentLng ?: PLACEHOLDER_LNG)
 
@@ -184,7 +183,7 @@ fun CreateTripScreen(
                 // happens straight on a real phone, without Android Studio
                 // attached to read logs.
                 val detail = exception.message ?: exception::class.simpleName ?: "error desconocido"
-                locationError = "No se pudo obtener tu ubicacion: $detail"
+                locationError = "No se pudo obtener tu ubicación: $detail"
             },
         )
     }
@@ -195,7 +194,7 @@ fun CreateTripScreen(
         if (granted) {
             scope.launch { fetchCurrentLocation() }
         } else {
-            locationError = "Se necesita permiso de ubicacion"
+            locationError = "Se necesita permiso de ubicación"
         }
     }
 
@@ -216,17 +215,37 @@ fun CreateTripScreen(
         if (useCurrentLocation) {
             requestCurrentLocation()
         }
+        favoritePlaceRepository.list().onSuccess { favorites = it }
     }
 
-    // Geocodes (unless already confirmed on the map) and opens the confirm
-    // dialog for the destination — reuses destinationCoords as the starting
-    // pin position if the user is reopening it to adjust further. If
-    // geocoding fails outright, opens the dialog anyway on a fallback
-    // center instead of just leaving the user stuck on an error message —
-    // they place the pin themselves.
+    // Geocodes (unless already confirmed on the map or picked as a
+    // favorite) and opens the confirm dialog for the origin — same pattern
+    // as destination below. Only reachable when useCurrentLocation is
+    // false (the field doesn't exist otherwise).
+    fun openMapConfirmForOrigin() {
+        if (originText.isBlank()) {
+            errorMessage = "Ingresá un origen primero"
+            return
+        }
+        scope.launch {
+            isResolvingMapConfirm = true
+            val coords = originCoords ?: geocodingProvider.geocode(originText).getOrNull()
+            isResolvingMapConfirm = false
+            errorMessage = null
+            val (lat, lng) = coords ?: fallbackMapCenter()
+            mapConfirmState = MapConfirmState(
+                target = ConfirmTarget.Origin,
+                label = originText,
+                lat = lat,
+                lng = lng,
+                wasGeocoded = coords != null,
+            )
+        }
+    }
+
     fun openMapConfirmForDestination() {
         if (destination.isBlank()) {
-            errorMessage = "Ingresa un destino primero"
+            errorMessage = "Ingresá un destino primero"
             return
         }
         scope.launch {
@@ -278,22 +297,45 @@ fun CreateTripScreen(
         }
 
         if (destination.isBlank()) {
-            errorMessage = "Ingresa un destino"
+            errorMessage = "Ingresá un destino"
             return
         }
         if (useCurrentLocation && (currentLat == null || currentLng == null)) {
-            errorMessage = "Esperando tu ubicacion, intenta de nuevo en un momento"
+            errorMessage = "Esperando tu ubicación, intentá de nuevo en un momento"
+            return
+        }
+        if (!useCurrentLocation && originText.isBlank()) {
+            errorMessage = "Ingresá un origen"
             return
         }
         errorMessage = null
         isSaving = true
         scope.launch {
-            // Use the map-confirmed point if there is one — otherwise fall
-            // back to geocoding the text, same as before this feature
-            // existed. Confirming on the map is optional, not a required
-            // step — unless geocoding fails outright, in which case
-            // there's no other way to resolve a point, so the map opens
-            // automatically instead of just leaving the user stuck.
+            val originCoordsResolved = if (useCurrentLocation) {
+                currentLat!! to currentLng!!
+            } else {
+                originCoords ?: geocodingProvider.geocode(originText).getOrNull()
+            }
+            if (originCoordsResolved == null) {
+                isSaving = false
+                val (lat, lng) = fallbackMapCenter()
+                mapConfirmState = MapConfirmState(
+                    target = ConfirmTarget.Origin,
+                    label = originText,
+                    lat = lat,
+                    lng = lng,
+                    wasGeocoded = false,
+                )
+                errorMessage = "No se encontró \"$originText\" automáticamente — marcá el punto en el mapa"
+                return@launch
+            }
+
+            // Use the map-confirmed/favorite point if there is one —
+            // otherwise fall back to geocoding the text, same as before
+            // this feature existed. Confirming on the map is optional, not
+            // a required step — unless geocoding fails outright, in which
+            // case there's no other way to resolve a point, so the map
+            // opens automatically instead of just leaving the user stuck.
             val destinationCoordsResolved = destinationCoords
                 ?: geocodingProvider.geocode(destination).getOrNull()
             if (destinationCoordsResolved == null) {
@@ -306,14 +348,15 @@ fun CreateTripScreen(
                     lng = lng,
                     wasGeocoded = false,
                 )
-                errorMessage = "No se encontro \"$destination\" automaticamente — marca el punto en el mapa"
+                errorMessage = "No se encontró \"$destination\" automáticamente — marcá el punto en el mapa"
                 return@launch
             }
 
             // Same either/or resolution per stop — geocode only the ones
-            // that weren't already confirmed on the map. If any one of them
-            // can't be resolved, same treatment as the destination above:
-            // open the map for that specific stop instead of just erroring.
+            // that weren't already confirmed on the map or picked as a
+            // favorite. If any one of them can't be resolved, same
+            // treatment as origin/destination above: open the map for that
+            // specific stop instead of just erroring.
             val geocodedStops = mutableListOf<Pair<String, Pair<Double, Double>>>()
             for ((index, stop) in stops.withIndex()) {
                 val stopCoords = if (stop.confirmedLat != null && stop.confirmedLng != null) {
@@ -331,29 +374,26 @@ fun CreateTripScreen(
                         lng = lng,
                         wasGeocoded = false,
                     )
-                    errorMessage = "No se encontro \"${stop.name}\" automaticamente — marca el punto en el mapa"
+                    errorMessage = "No se encontró \"${stop.name}\" automáticamente — marcá el punto en el mapa"
                     return@launch
                 }
                 geocodedStops.add(stop.name to stopCoords)
             }
 
-            val originLat = if (useCurrentLocation) currentLat!! else PLACEHOLDER_LAT
-            val originLng = if (useCurrentLocation) currentLng!! else PLACEHOLDER_LNG
-            // Best-effort, unlike destination/stops above — the origin
-            // comes from real GPS, not typed text, so a failure here is
-            // more likely a transient network/service hiccup than "this
-            // place doesn't exist". Not worth blocking a valid save just to
-            // give the origin a nicer name — falls back to the previous
-            // fixed text silently.
+            // origin_name: a real typed/favorite name when entered
+            // manually; reverse-geocoded from GPS (best-effort, falls back
+            // to the old fixed text on failure) when using current location.
             val originName = if (useCurrentLocation) {
-                geocodingProvider.reverseGeocode(originLat, originLng).getOrDefault("Ubicacion actual")
+                geocodingProvider
+                    .reverseGeocode(originCoordsResolved.first, originCoordsResolved.second)
+                    .getOrDefault("Ubicación actual")
             } else {
-                "Origen"
+                originText
             }
             val request = TripCreateRequest(
                 originName = originName,
-                originLat = originLat,
-                originLng = originLng,
+                originLat = originCoordsResolved.first,
+                originLng = originCoordsResolved.second,
                 destinationName = destination,
                 destinationLat = destinationCoordsResolved.first,
                 destinationLng = destinationCoordsResolved.second,
@@ -393,7 +433,7 @@ fun CreateTripScreen(
                         startResult.fold(
                             onSuccess = { onTripStarted(trip.id) },
                             onFailure = {
-                                errorMessage = "El viaje se guardo pero no se pudo iniciar."
+                                errorMessage = "El viaje se guardó pero no se pudo iniciar."
                             },
                         )
                     } else {
@@ -426,6 +466,19 @@ fun CreateTripScreen(
             useCurrentLocation = useCurrentLocation,
             isLoadingLocation = isLoadingLocation,
             locationError = locationError,
+            originText = originText,
+            onOriginTextChange = {
+                originText = it
+                originCoords = null
+            },
+            favorites = favorites,
+            onFavoriteSelected = { favorite ->
+                originText = favorite.name
+                originCoords = favorite.lat to favorite.lng
+            },
+            onConfirmOnMap = { openMapConfirmForOrigin() },
+            hasConfirmedCoords = originCoords != null,
+            enabled = !isSaving && !isResolvingMapConfirm,
             onChangeClick = {
                 useCurrentLocation = !useCurrentLocation
                 if (useCurrentLocation) {
@@ -436,7 +489,8 @@ fun CreateTripScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        OutlinedTextField(
+        FavoriteAwareTextField(
+            label = "Destino",
             value = destination,
             onValueChange = {
                 destination = it
@@ -444,10 +498,13 @@ fun CreateTripScreen(
                 // text — it no longer applies once the text changes.
                 destinationCoords = null
             },
-            label = { Text("Destino") },
-            singleLine = true,
+            favorites = favorites,
+            onFavoriteSelected = { favorite ->
+                destination = favorite.name
+                destinationCoords = favorite.lat to favorite.lng
+            },
             enabled = !isSaving,
-            trailingIcon = {
+            extraTrailingIcon = {
                 IconButton(
                     onClick = { openMapConfirmForDestination() },
                     enabled = !isSaving && !isResolvingMapConfirm && destination.isNotBlank(),
@@ -463,7 +520,6 @@ fun CreateTripScreen(
                     )
                 }
             },
-            modifier = Modifier.fillMaxWidth(),
         )
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -479,11 +535,25 @@ fun CreateTripScreen(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
+            FavoriteAwareTextField(
+                label = "Agregar parada",
                 value = newStop,
                 onValueChange = { newStop = it },
-                label = { Text("Agregar parada") },
-                singleLine = true,
+                favorites = favorites,
+                // A favorite already has known coordinates — add it as a
+                // confirmed stop directly, instead of just filling the text
+                // and waiting for "+" (which would geocode it again,
+                // pointlessly, for a point we already know exactly).
+                onFavoriteSelected = { favorite ->
+                    stops.add(
+                        StopDraft(
+                            name = favorite.name,
+                            confirmedLat = favorite.lat,
+                            confirmedLng = favorite.lng,
+                        ),
+                    )
+                    newStop = ""
+                },
                 enabled = !isSaving,
                 modifier = Modifier.weight(1f),
             )
@@ -574,6 +644,7 @@ fun CreateTripScreen(
             wasGeocoded = state.wasGeocoded,
             onConfirm = { lat, lng ->
                 when (val target = state.target) {
+                    is ConfirmTarget.Origin -> originCoords = lat to lng
                     is ConfirmTarget.Destination -> destinationCoords = lat to lng
                     is ConfirmTarget.Stop -> {
                         val current = stops.getOrNull(target.index)
@@ -589,22 +660,32 @@ fun CreateTripScreen(
     }
 }
 
+// Toggles between "Ubicación actual" (GPS, unchanged from before) and a
+// manual FavoriteAwareTextField — the manual path didn't exist before
+// android#81, origin had no text entry at all.
 @Composable
 private fun OriginField(
     useCurrentLocation: Boolean,
     isLoadingLocation: Boolean,
     locationError: String?,
+    originText: String,
+    onOriginTextChange: (String) -> Unit,
+    favorites: List<FavoritePlaceResponse>,
+    onFavoriteSelected: (FavoritePlaceResponse) -> Unit,
+    onConfirmOnMap: () -> Unit,
+    hasConfirmedCoords: Boolean,
+    enabled: Boolean,
     onChangeClick: () -> Unit,
 ) {
     Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (useCurrentLocation) {
+        if (useCurrentLocation) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(
                     imageVector = Icons.Filled.MyLocation,
                     contentDescription = null,
@@ -612,27 +693,56 @@ private fun OriginField(
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Ubicación actual",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                if (isLoadingLocation) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                TextButton(onClick = onChangeClick, enabled = enabled) {
+                    Text("Cambiar")
+                }
             }
-            Text(
-                text = if (useCurrentLocation) "Ubicacion actual" else "Origen",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
+            if (locationError != null) {
+                Text(
+                    text = locationError,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+                )
+            }
+        } else {
+            FavoriteAwareTextField(
+                label = "Origen",
+                value = originText,
+                onValueChange = onOriginTextChange,
+                favorites = favorites,
+                onFavoriteSelected = onFavoriteSelected,
+                enabled = enabled,
+                extraTrailingIcon = {
+                    IconButton(
+                        onClick = onConfirmOnMap,
+                        enabled = enabled && originText.isNotBlank(),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.EditLocation,
+                            contentDescription = "Confirmar origen en el mapa",
+                            tint = if (hasConfirmedCoords) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                },
             )
-            if (useCurrentLocation && isLoadingLocation) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            TextButton(onClick = onChangeClick, enabled = enabled) {
+                Text("Usar ubicación actual")
             }
-            TextButton(onClick = onChangeClick) {
-                Text(if (useCurrentLocation) "Cambiar" else "Usar ubicacion actual")
-            }
-        }
-        if (useCurrentLocation && locationError != null) {
-            Text(
-                text = locationError,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp, start = 4.dp),
-            )
         }
     }
 }
@@ -686,7 +796,7 @@ private fun TimePickerField(
 ) {
     var showDialog by remember { mutableStateOf(false) }
 
-    OutlinedTextField(
+    androidx.compose.material3.OutlinedTextField(
         value = timeText,
         onValueChange = {},
         readOnly = true,
@@ -751,115 +861,6 @@ private fun TimePickerDialog(
                     TextButton(onClick = onDismiss) { Text("Cancelar") }
                     Spacer(modifier = Modifier.width(8.dp))
                     TextButton(onClick = onConfirm) { Text("OK") }
-                }
-            }
-        }
-    }
-}
-
-// Lets the user see where a typed address actually geocoded to, and drag
-// the pin to correct it if it's off — the core gap this dialog exists to
-// close: geocoding happened "blind" before, with no way to see or fix a
-// wrong result. Confirming here is optional; saving without ever opening
-// this dialog still works exactly as before, resolving via geocoding at
-// save time. Used for both the destination and any stop, distinguished by
-// the caller via `label` and where the confirmed point gets stored.
-//
-// wasGeocoded = false means geocoding couldn't resolve the typed text at
-// all — the dialog still opens, centered on a fallback point, so the user
-// has a way to place the pin themselves instead of hitting a dead end.
-@Composable
-private fun LocationConfirmDialog(
-    label: String,
-    initialLat: Double,
-    initialLng: Double,
-    wasGeocoded: Boolean,
-    onConfirm: (Double, Double) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val context = LocalContext.current
-    // Dark map style, consistent with every other map in the app.
-    // Remembered so it's parsed once, not on every recomposition while the
-    // marker is being dragged.
-    val mapProperties = remember {
-        MapProperties(mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark))
-    }
-    // draggable = true on the Marker below means Maps Compose itself keeps
-    // this position updated as the user drags — no reactive-reassignment
-    // workaround needed here (unlike the live-trip map's current-position
-    // marker, which had to fight rememberMarkerState only picking up an
-    // initial value — that bug doesn't apply to a user-driven drag, only
-    // to programmatically-driven position updates).
-    val markerState = rememberMarkerState(position = LatLng(initialLat, initialLng))
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(LatLng(initialLat, initialLng), 16f)
-    }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
-                .padding(16.dp),
-        ) {
-            Text(
-                text = "Confirmar: $label",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = if (wasGeocoded) {
-                    "Mantene presionado el pin para arrastrarlo y ajustar la ubicacion."
-                } else {
-                    "No pudimos encontrar esta direccion automaticamente. Mantene presionado " +
-                        "el pin y arrastralo hasta el lugar correcto."
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = if (wasGeocoded) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(320.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-            ) {
-                GoogleMap(
-                    modifier = Modifier.fillMaxSize(),
-                    cameraPositionState = cameraPositionState,
-                    properties = mapProperties,
-                    uiSettings = MapUiSettings(
-                        zoomControlsEnabled = false,
-                        rotationGesturesEnabled = false,
-                        tiltGesturesEnabled = false,
-                    ),
-                ) {
-                    Marker(
-                        state = markerState,
-                        draggable = true,
-                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onDismiss) {
-                    Text("Cancelar")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        onConfirm(markerState.position.latitude, markerState.position.longitude)
-                    },
-                ) {
-                    Text("Confirmar")
                 }
             }
         }

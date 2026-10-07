@@ -11,7 +11,7 @@
 
     <application
         android:name=".TripTraceApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:label="@string/app_name"
         android:theme="@style/Theme.TripTrace"
         android:supportsRtl="true">

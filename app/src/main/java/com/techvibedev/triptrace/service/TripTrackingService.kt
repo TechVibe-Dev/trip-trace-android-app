@@ -240,9 +240,11 @@ class TripTrackingService : Service() {
         // points instead of following the street. 3s/1.5s keeps roughly the
         // same 2:1 ratio between requested and minimum interval, gives ~3x
         // point density, and is still well within what Room/the 30s API
-        // sync comfortably handles for a normal trip length.
-        private const val LOCATION_INTERVAL_MS = 3_000L
-        private const val LOCATION_MIN_INTERVAL_MS = 1_500L
+        // sync comfortably handles for a normal trip length. Lowered again
+        // to 2s/1s to test the close-up navigation camera (android#110) —
+        // same 2:1 ratio kept.
+        private const val LOCATION_INTERVAL_MS = 2_000L
+        private const val LOCATION_MIN_INTERVAL_MS = 1_000L
         private const val SENSOR_FLUSH_INTERVAL_MS = 2_000L
 
         fun start(context: Context, tripId: String) {
