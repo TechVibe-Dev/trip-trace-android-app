@@ -25,6 +25,7 @@ import androidx.navigation.compose.rememberNavController
 import com.techvibedev.triptrace.data.network.RetrofitClient
 import com.techvibedev.triptrace.data.repository.AuthRepository
 import com.techvibedev.triptrace.data.repository.FavoritePlaceRepository
+import com.techvibedev.triptrace.data.repository.RouteRepository
 import com.techvibedev.triptrace.data.repository.TripRepository
 import com.techvibedev.triptrace.data.session.TokenDataStore
 import com.techvibedev.triptrace.ui.components.ServerWakingBanner
@@ -48,6 +49,7 @@ fun TripTraceNavHost(navController: NavHostController = rememberNavController())
     val favoritePlaceRepository = remember {
         FavoritePlaceRepository(RetrofitClient.favoritePlaceApiService, tokenDataStore)
     }
+    val routeRepository = remember { RouteRepository(RetrofitClient.routeApiService, tokenDataStore) }
     // null while DataStore hasn't emitted yet (checking for a saved session).
     val isLoggedIn by authRepository.isLoggedIn.collectAsState(initial = null)
 
@@ -85,6 +87,7 @@ fun TripTraceNavHost(navController: NavHostController = rememberNavController())
                 authRepository = authRepository,
                 tripRepository = tripRepository,
                 favoritePlaceRepository = favoritePlaceRepository,
+                routeRepository = routeRepository,
             )
             // Drawn over whatever screen is showing, below the status bar.
             ServerWakingBanner(
@@ -104,6 +107,7 @@ private fun TripTraceNavContent(
     authRepository: AuthRepository,
     tripRepository: TripRepository,
     favoritePlaceRepository: FavoritePlaceRepository,
+    routeRepository: RouteRepository,
 ) {
     if (isLoggedIn == null) {
         Box(
@@ -162,6 +166,7 @@ private fun TripTraceNavContent(
             UserScreen(
                 authRepository = authRepository,
                 favoritePlaceRepository = favoritePlaceRepository,
+                routeRepository = routeRepository,
                 onLoggedOut = {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(0) { inclusive = true }
@@ -173,6 +178,7 @@ private fun TripTraceNavContent(
             CreateTripScreen(
                 tripRepository = tripRepository,
                 favoritePlaceRepository = favoritePlaceRepository,
+                routeRepository = routeRepository,
                 onTripSaved = {
                     navController.navigate(Routes.TRIPS) {
                         popUpTo(Routes.TRIPS) { inclusive = true }

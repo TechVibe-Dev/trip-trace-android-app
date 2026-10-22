@@ -7,6 +7,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Custom routes per trip. Create trip has a new "Ruta" row: "Elegir" opens a full-screen map with Google's fastest route, its alternatives (up to 3), and the user's saved routes between the same two places, each with its duration and distance. Long-pressing the map adds a "pasar por" point (up to 10), building a custom route that can be saved with a name. A picked Google alternative is kept by turning the spot where it differs most from the fastest route into a via point. During the trip, rerouting follows the chosen route; a "Ruta elegida" card shows its name with a "Dejar de seguirla" button to go back to the fastest route. Saved routes are listed in Perfil, where they can be deleted. Needs trip-trace-api [#82](https://github.com/TechVibe-Dev/trip-trace-api/pull/82). ([#126](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/126))
+
 ### Changed
 
 - Bumped `com.google.maps.android:maps-compose` from 3.0.0 to 9.0.0. ([#122](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/122))

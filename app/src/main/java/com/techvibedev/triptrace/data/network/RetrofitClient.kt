@@ -58,6 +58,7 @@ object RetrofitClient {
     val favoritePlaceApiService: FavoritePlaceApiService by lazy {
         retrofit.create(FavoritePlaceApiService::class.java)
     }
+    val routeApiService: RouteApiService by lazy { retrofit.create(RouteApiService::class.java) }
 
     // Fire-and-forget GET /health, so a sleeping API starts booting as soon
     // as the app opens instead of when the user's first real action needs
