@@ -326,9 +326,9 @@ private fun FavoritesCard(
     }
 }
 
-// Named routes between two places, e.g. "Por Rambla y Ruta 101". They're
-// created from Create trip's route picker, where their points are placed on
-// a map; here they can only be reviewed and deleted.
+// Named routes between two places. They're created from Create trip's route
+// picker, where their points are placed on a map; here they can only be
+// reviewed and deleted.
 @Composable
 private fun SavedRoutesCard(
     savedRoutes: List<SavedRouteResponse>,

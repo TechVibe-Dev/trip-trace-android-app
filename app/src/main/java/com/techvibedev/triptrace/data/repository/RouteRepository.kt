@@ -9,7 +9,7 @@ import com.techvibedev.triptrace.data.session.TokenDataStore
 import kotlinx.coroutines.flow.first
 
 // Route previews (before a trip exists) and the user's saved routes: named
-// ways of driving between two places, e.g. "Por Rambla y Ruta 101".
+// ways of driving between two places.
 class RouteRepository(
     private val apiService: RouteApiService,
     private val tokenDataStore: TokenDataStore,

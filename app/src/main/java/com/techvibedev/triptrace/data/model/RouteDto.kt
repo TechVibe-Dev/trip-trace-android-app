@@ -49,7 +49,6 @@ data class RoutePreviewResponse(
     @SerializedName("distance_meters") val distanceMeters: Int,
     @SerializedName("calculated_arrival_at") val calculatedArrivalAt: String,
     @SerializedName("route_polyline") val routePolyline: String,
-    // Google's short label for the route, e.g. "Ruta 8". Only filled for
-    // alternatives.
+    // Google's short label for the route. Only filled for alternatives.
     val description: String,
 )

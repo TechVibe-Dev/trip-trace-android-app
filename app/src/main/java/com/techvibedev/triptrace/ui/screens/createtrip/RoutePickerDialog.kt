@@ -267,8 +267,8 @@ fun RoutePickerDialog(
         val point = ViaPointDto(name = null, lat = latLng.latitude, lng = latLng.longitude)
         customVia.add(point)
         scope.launch {
-            // Best-effort label for the list, e.g. "Ruta 101"; the point
-            // works the same without it.
+            // Best-effort label for the list; the point works the same
+            // without it.
             geocodingProvider.reverseGeocode(latLng.latitude, latLng.longitude).onSuccess { name ->
                 val index = customVia.indexOf(point)
                 if (index >= 0) customVia[index] = point.copy(name = name)
