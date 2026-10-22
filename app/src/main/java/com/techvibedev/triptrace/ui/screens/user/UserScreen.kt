@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -40,9 +42,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
+import com.techvibedev.triptrace.data.model.SavedRouteResponse
 import com.techvibedev.triptrace.data.model.UserResponse
 import com.techvibedev.triptrace.data.repository.AuthRepository
 import com.techvibedev.triptrace.data.repository.FavoritePlaceRepository
+import com.techvibedev.triptrace.data.repository.RouteRepository
 import com.techvibedev.triptrace.data.session.SettingsDataStore
 import com.techvibedev.triptrace.location.GeocodingProvider
 import com.techvibedev.triptrace.location.LocationProvider
@@ -50,12 +54,13 @@ import com.techvibedev.triptrace.ui.components.LocationConfirmDialog
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
-// Profile display + logout. The sensor-recording toggle and favorites
-// management live here too, as separate sections.
+// Profile display + logout. The sensor-recording toggle, favorites and saved
+// routes management live here too, as separate sections.
 @Composable
 fun UserScreen(
     authRepository: AuthRepository,
     favoritePlaceRepository: FavoritePlaceRepository,
+    routeRepository: RouteRepository,
     onLoggedOut: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -69,7 +74,15 @@ fun UserScreen(
     var favorites by remember { mutableStateOf<List<FavoritePlaceResponse>>(emptyList()) }
     var isLoadingFavorites by remember { mutableStateOf(true) }
     var showAddFavoriteDialog by remember { mutableStateOf(false) }
+    var savedRoutes by remember { mutableStateOf<List<SavedRouteResponse>>(emptyList()) }
+    var isLoadingSavedRoutes by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
+
+    suspend fun reloadSavedRoutes() {
+        isLoadingSavedRoutes = true
+        routeRepository.listSavedRoutes().onSuccess { savedRoutes = it }
+        isLoadingSavedRoutes = false
+    }
 
     suspend fun reloadFavorites() {
         isLoadingFavorites = true
@@ -88,11 +101,13 @@ fun UserScreen(
         )
         isLoading = false
         reloadFavorites()
+        reloadSavedRoutes()
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
         Text(
@@ -130,6 +145,19 @@ fun UserScreen(
                 scope.launch {
                     favoritePlaceRepository.delete(favorite.id)
                     reloadFavorites()
+                }
+            },
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        SavedRoutesCard(
+            savedRoutes = savedRoutes,
+            isLoading = isLoadingSavedRoutes,
+            onDeleteClick = { route ->
+                scope.launch {
+                    routeRepository.deleteSavedRoute(route.id)
+                    reloadSavedRoutes()
                 }
             },
         )
@@ -287,6 +315,71 @@ private fun FavoritesCard(
                                 Icon(
                                     imageVector = Icons.Filled.DeleteOutline,
                                     contentDescription = "Borrar favorito \"${favorite.name}\"",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Named routes between two places, e.g. "Por Rambla y Ruta 101". They're
+// created from Create trip's route picker, where their points are placed on
+// a map; here they can only be reviewed and deleted.
+@Composable
+private fun SavedRoutesCard(
+    savedRoutes: List<SavedRouteResponse>,
+    isLoading: Boolean,
+    onDeleteClick: (SavedRouteResponse) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Rutas guardadas",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            when {
+                isLoading -> {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.padding(8.dp))
+                    }
+                }
+                savedRoutes.isEmpty() -> {
+                    Text(
+                        text = "Todavía no tenés rutas guardadas. Podés guardar una al elegir la ruta de un viaje.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                else -> {
+                    savedRoutes.forEach { route ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = route.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(
+                                    text = "${route.originName} → ${route.destinationName}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            IconButton(onClick = { onDeleteClick(route) }) {
+                                Icon(
+                                    imageVector = Icons.Filled.DeleteOutline,
+                                    contentDescription = "Borrar ruta \"${route.name}\"",
                                     tint = MaterialTheme.colorScheme.error,
                                 )
                             }
