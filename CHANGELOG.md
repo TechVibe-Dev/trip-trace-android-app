@@ -11,9 +11,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Custom routes per trip. Create trip has a new "Ruta" row: "Elegir" opens a full-screen map with Google's fastest route, its alternatives (up to 3), and the user's saved routes between the same two places, each with its duration and distance. Long-pressing the map adds a "pasar por" point (up to 10), building a custom route that can be saved with a name. A picked Google alternative is kept by turning the spot where it differs most from the fastest route into a via point. During the trip, rerouting follows the chosen route; a "Ruta elegida" card shows its name with a "Dejar de seguirla" button to go back to the fastest route. Saved routes are listed in Perfil, where they can be deleted. Needs trip-trace-api [#82](https://github.com/TechVibe-Dev/trip-trace-api/pull/82). ([#126](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/126))
 
+### Fixed
+
+- History: a long trip title no longer squeezes the date into a vertical column or overlaps it. The title now wraps in the space left beside the date and arrow. ([#135](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/135))
+- Create trip: the "Agregar parada" field no longer takes focus and opens the keyboard when the screen opens. No field is focused until the user taps one. ([#135](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/135))
+- Create trip: picking a favorite in Destino, Origen or Agregar parada now selects it in one tap, instead of the list reopening with the same favorite and asking for a second tap. ([#135](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/135))
+
+## [0.7.0] - 04 Nov 2026
+
 ### Changed
 
+- Bumped `androidx.datastore:datastore-preferences` from 1.1.1 to 1.3.0. ([#132](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/132))
+- Bumped `com.squareup.okhttp3:logging-interceptor` from 4.12.0 to 5.5.1, a major version. It also moves the OkHttp core library used by Retrofit to 5.x. ([#127](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/127))
+- Bumped `com.google.maps.android:maps-compose` from 9.0.0 to 9.0.1. ([#130](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/130))
+- Bumped Kotlin (`org.jetbrains.kotlin.plugin.compose`) from 2.4.20 to 2.4.21. ([#128](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/128))
+- Bumped `com.google.android.gms:play-services-maps` from 20.0.0 to 20.1.0. ([#131](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/131))
+- Bumped the Android Gradle Plugin from 9.1.0 to 9.5.0, together with Gradle from 9.4.1 to 9.6.0 (set in the CI workflow), since AGP 9.5 refuses to run on older Gradle. Replaces dependabot's [#129](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/129), which only bumped AGP and failed to build. ([#133](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/133))
 - Bumped `com.google.maps.android:maps-compose` from 3.0.0 to 9.0.0. ([#122](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/122))
+- Bumped `com.google.android.gms:play-services-maps` from 18.1.0 to 20.0.0. ([#121](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/121))
 - Bumped `androidx.navigation:navigation-compose` from 2.8.4 to 2.10.2. Needs core-ktx 1.19.1 from [#120](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/120), since it pulls in an `androidx.activity` that extends classes only newer `androidx.core` has. ([#123](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/123))
 - Bumped `androidx.core:core-ktx` from 1.15.0 to 1.19.1. Needs the toolchain upgrade from [#125](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/125). ([#120](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/120))
 - Upgraded the build toolchain to Android Gradle Plugin 9.1.0, Gradle 9.4.1, Kotlin 2.4.20 and KSP 2.3.12, and compileSdk to 37 (targetSdk stays at 35, so runtime behavior on devices doesn't change). Needed by newer AndroidX and Maps libraries (core-ktx 1.19, navigation-compose 2.10, maps-compose 9), which refuse to build on older ones. AGP 9 compiles Kotlin itself, so the separate `kotlin-android` plugin is gone. Part of `android#21`. ([#125](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/125))

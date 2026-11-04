@@ -23,11 +23,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
+import kotlinx.coroutines.flow.drop
 
 // A text field that offers the user's saved favorites (android#81) two
 // ways: typing something that matches a favorite's name opens the list of
@@ -79,9 +81,17 @@ fun FavoriteAwareTextField(
     // produces a match, closes the moment it stops matching (cleared the
     // field, or kept typing past it). Skipped while the heart's full list
     // is showing, so typing during that doesn't fight it closed.
+    // Text set by picking a favorite. While the field still holds exactly
+    // that text the typeahead stays closed, so a pick doesn't reopen the
+    // list with the same favorite and ask for a second tap.
+    var selectedText by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(value, favorites) {
+        if (selectedText != null && value != selectedText) {
+            selectedText = null
+        }
         if (!showAllFavorites) {
-            menuOpen = typeaheadMatches.isNotEmpty()
+            menuOpen = selectedText == null && typeaheadMatches.isNotEmpty()
         }
     }
 
@@ -90,11 +100,17 @@ fun FavoriteAwareTextField(
     // browsed/picked from, not typed into, so it's fine (arguably correct)
     // if that path lets the keyboard drop. requestFocus() on an
     // already-focused field is a harmless no-op, so this doesn't need to
-    // check whether focus actually needs reclaiming first.
-    LaunchedEffect(menuOpen) {
-        if (!showAllFavorites) {
-            focusRequester.requestFocus()
-        }
+    // check whether focus actually needs reclaiming first. The initial value
+    // is skipped: otherwise every instance grabs focus on first composition
+    // and the last field on screen ends up focused with the keyboard open.
+    LaunchedEffect(Unit) {
+        snapshotFlow { menuOpen }
+            .drop(1)
+            .collect {
+                if (!showAllFavorites) {
+                    focusRequester.requestFocus()
+                }
+            }
     }
 
     fun dismissMenu() {
@@ -103,6 +119,7 @@ fun FavoriteAwareTextField(
     }
 
     fun selectFavorite(favorite: FavoritePlaceResponse) {
+        selectedText = favorite.name
         onFavoriteSelected(favorite)
         dismissMenu()
     }
