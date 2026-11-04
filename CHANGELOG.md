@@ -9,9 +9,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- History: a long trip title no longer squeezes the date into a vertical column or overlaps it. The title now wraps in the space left beside the date and arrow. (PRLINK)
-- Create trip: the "Agregar parada" field no longer takes focus and opens the keyboard when the screen opens. No field is focused until the user taps one. (PRLINK)
-- Create trip: picking a favorite in Destino, Origen or Agregar parada now selects it in one tap, instead of the list reopening with the same favorite and asking for a second tap. (PRLINK)
+- History: a long trip title no longer squeezes the date into a vertical column or overlaps it. The title now wraps in the space left beside the date and arrow. ([#135](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/135))
+- Create trip: the "Agregar parada" field no longer takes focus and opens the keyboard when the screen opens. No field is focused until the user taps one. ([#135](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/135))
+- Create trip: picking a favorite in Destino, Origen or Agregar parada now selects it in one tap, instead of the list reopening with the same favorite and asking for a second tap. ([#135](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/135))
 
 ### Changed
 
