@@ -173,15 +173,23 @@ private fun PastTripCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // The title takes the remaining width so a long one wraps
+                // instead of squeezing the date and arrow off the row.
                 Text(
                     text = "${trip.originName} \u2192 ${trip.destinationName}",
                     style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 8.dp),
+                ) {
                     Text(
                         text = formatLocalDate(trip.endedAt ?: trip.createdAt),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
                     )
                     Icon(
                         imageVector = if (expanded) {

@@ -7,6 +7,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- History: a long trip title no longer squeezes the date into a vertical column or overlaps it. The title now wraps in the space left beside the date and arrow. (PRLINK)
+- Create trip: the "Agregar parada" field no longer takes focus and opens the keyboard when the screen opens. No field is focused until the user taps one. (PRLINK)
+- Create trip: picking a favorite in Destino, Origen or Agregar parada now selects it in one tap, instead of the list reopening with the same favorite and asking for a second tap. (PRLINK)
+
 ### Changed
 
 - Bumped the Android Gradle Plugin from 9.1.0 to 9.5.0, together with Gradle from 9.4.1 to 9.6.0 (set in the CI workflow), since AGP 9.5 refuses to run on older Gradle. Replaces dependabot's [#129](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/129), which only bumped AGP and failed to build. ([#133](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/133))
