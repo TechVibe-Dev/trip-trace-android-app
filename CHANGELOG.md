@@ -9,6 +9,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Bumped the Android Gradle Plugin from 9.1.0 to 9.5.0, together with Gradle from 9.4.1 to 9.6.0 (set in the CI workflow), since AGP 9.5 refuses to run on older Gradle. Replaces dependabot's [#129](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/129), which only bumped AGP and failed to build. ([#133](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/133))
 - Bumped `com.google.maps.android:maps-compose` from 3.0.0 to 9.0.0. ([#122](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/122))
 - Bumped `androidx.navigation:navigation-compose` from 2.8.4 to 2.10.2. Needs core-ktx 1.19.1 from [#120](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/120), since it pulls in an `androidx.activity` that extends classes only newer `androidx.core` has. ([#123](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/123))
 - Bumped `androidx.core:core-ktx` from 1.15.0 to 1.19.1. Needs the toolchain upgrade from [#125](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/125). ([#120](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/120))
