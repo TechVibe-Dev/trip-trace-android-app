@@ -1,12 +1,13 @@
 package com.techvibedev.triptrace.ui.screens.history
 
-import androidx.compose.foundation.layout.width;
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -44,7 +46,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
@@ -65,6 +72,8 @@ import com.techvibedev.triptrace.data.repository.TripRepository
 import java.time.Duration
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -184,8 +193,10 @@ private fun PastTripCard(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(start = 8.dp),
                 ) {
+                    // Departure date, so a "+1" on the arrival time reads
+                    // relative to the day shown here.
                     Text(
-                        text = formatLocalDate(trip.endedAt ?: trip.createdAt),
+                        text = formatLocalDate(trip.startedAt ?: trip.endedAt ?: trip.createdAt),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -207,43 +218,129 @@ private fun PastTripCard(
                 Spacer(modifier = Modifier.height(10.dp))
                 RealRouteMap(tripId = trip.id, tripRepository = tripRepository)
                 Spacer(modifier = Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    TripStat(label = "Máxima", value = formatSpeed(trip.maxSpeed))
-                    TripStat(label = "Promedio", value = formatSpeed(trip.avgSpeed))
-                    TripStat(label = "Distancia", value = formatDistance(trip.distanceKm))
+                TripTimesRow(trip = trip)
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    TripStat(label = "Máxima", value = formatSpeed(trip.maxSpeed), modifier = Modifier.weight(1f))
+                    TripStat(label = "Promedio", value = formatSpeed(trip.avgSpeed), modifier = Modifier.weight(1f))
+                    TripStat(label = "Distancia", value = formatDistance(trip.distanceKm), modifier = Modifier.weight(1f))
                 }
                 Spacer(modifier = Modifier.height(10.dp))
                 SensorDataCleanupRow(tripId = trip.id)
             } else {
                 Spacer(modifier = Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text(
-                        text = formatDuration(trip.startedAt, trip.endedAt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = formatDistance(trip.distanceKm),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                TripSummaryRow(trip = trip)
             }
         }
     }
 }
 
+// Collapsed card's second line: schedule, duration and distance. Each item
+// stays on one line; if they don't fit, a whole item moves to the next line
+// instead of being cut.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TripStat(label: String, value: String) {
-    Column {
+private fun TripSummaryRow(trip: TripResponse) {
+    val departure = toLocalDateTime(trip.startedAt)
+    val arrival = toLocalDateTime(trip.endedAt)
+    val dayOffsetColor = MaterialTheme.colorScheme.secondary
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        if (departure != null && arrival != null) {
+            val dayOffset = daysBetween(departure, arrival)
+            Text(
+                text = buildAnnotatedString {
+                    append("${formatLocalTime(departure)} \u2192 ${formatLocalTime(arrival)}")
+                    if (dayOffset > 0) {
+                        withStyle(
+                            SpanStyle(
+                                color = dayOffsetColor,
+                                fontSize = 9.sp,
+                                baselineShift = BaselineShift.Superscript,
+                            ),
+                        ) {
+                            append(" +$dayOffset")
+                        }
+                    }
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
+        SummaryText(formatDuration(trip.startedAt, trip.endedAt))
+        SummaryText(formatDistance(trip.distanceKm))
+    }
+}
+
+@Composable
+private fun SummaryText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        softWrap = false,
+    )
+}
+
+// Expanded card's departure/arrival/duration row. When the trip spans more
+// than one day, each time is prefixed with its date.
+@Composable
+private fun TripTimesRow(trip: TripResponse) {
+    val departure = toLocalDateTime(trip.startedAt)
+    val arrival = toLocalDateTime(trip.endedAt)
+    val spansDays = departure != null && arrival != null && daysBetween(departure, arrival) > 0
+    Row(modifier = Modifier.fillMaxWidth()) {
+        TripStat(
+            label = "Salida",
+            value = departure?.let { formatLocalTime(it) } ?: "--:--",
+            datePrefix = if (spansDays) departure?.let { formatDayMonth(it) } else null,
+            modifier = Modifier.weight(1f),
+        )
+        TripStat(
+            label = "Llegada",
+            value = arrival?.let { formatLocalTime(it) } ?: "--:--",
+            datePrefix = if (spansDays) arrival?.let { formatDayMonth(it) } else null,
+            modifier = Modifier.weight(1f),
+        )
+        TripStat(
+            label = "Duración",
+            value = formatDuration(trip.startedAt, trip.endedAt),
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun TripStat(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    datePrefix: String? = null,
+) {
+    val prefixColor = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(modifier = modifier) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = value,
+            text = buildAnnotatedString {
+                if (datePrefix != null) {
+                    withStyle(SpanStyle(color = prefixColor, fontSize = 11.sp)) {
+                        append("$datePrefix ")
+                    }
+                }
+                append(value)
+            },
             style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }
@@ -523,6 +620,26 @@ private fun formatLocalDate(isoDateTime: String?): String {
         "--"
     }
 }
+
+private fun toLocalDateTime(isoDateTime: String?): ZonedDateTime? {
+    if (isoDateTime == null) return null
+    return try {
+        OffsetDateTime.parse(isoDateTime).atZoneSameInstant(ZoneId.systemDefault())
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private fun formatLocalTime(dateTime: ZonedDateTime): String =
+    dateTime.format(DateTimeFormatter.ofPattern("HH:mm"))
+
+private fun formatDayMonth(dateTime: ZonedDateTime): String =
+    dateTime.format(DateTimeFormatter.ofPattern("dd/MM"))
+
+// Calendar days between departure and arrival in local time, not elapsed
+// 24h periods: 23:10 to 01:35 is one day apart.
+private fun daysBetween(departure: ZonedDateTime, arrival: ZonedDateTime): Long =
+    ChronoUnit.DAYS.between(departure.toLocalDate(), arrival.toLocalDate())
 
 private fun formatDuration(startedAt: String?, endedAt: String?): String {
     if (startedAt == null || endedAt == null) return "--"

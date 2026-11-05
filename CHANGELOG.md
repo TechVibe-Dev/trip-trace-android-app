@@ -7,6 +7,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- History: each trip shows its departure and arrival time. The collapsed card shows them before the duration, with a "+1" when the trip arrives on a later day. The expanded card adds a row with Salida, Llegada and Duración, with the date next to each time when the trip spans more than one day. The date at the top of the card is now the departure date.
+
 ### Fixed
 
 - History: a long trip title no longer squeezes the date into a vertical column or overlaps it. The title now wraps in the space left beside the date and arrow. ([#135](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/135))
