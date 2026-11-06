@@ -17,6 +17,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Create trip redesign: origin, stops and destination are shown as an itinerary in one card, joined by a line, with borderless fields. "Usar mi ubicación" is a chip under the origin, and the route sits at the end of the card. The save buttons stay fixed at the bottom of the screen. ([#140](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/140))
+- Bumped the Compose BOM from 2024.11.00 to 2026.09.00. `maps-compose` already pulled 2026.09.00 in at runtime, so the app was compiled against older Compose libraries than the ones it ran with, and the date picker crashed when it opened. ([#140](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/140))
 
 ### Fixed
 
