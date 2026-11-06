@@ -3,6 +3,8 @@ package com.techvibedev.triptrace.ui.screens.trips
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,9 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -32,14 +36,32 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMapOptions
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
+import com.google.android.gms.maps.model.MapStyleOptions
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.compose.rememberMarkerState
+import com.techvibedev.triptrace.R
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
+import com.techvibedev.triptrace.util.decodePolyline
 import kotlinx.coroutines.launch
 import java.time.Duration
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 fun TripsScreen(tripRepository: TripRepository, onStartTrip: (String) -> Unit) {
@@ -124,6 +146,7 @@ fun TripsScreen(tripRepository: TripRepository, onStartTrip: (String) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlannedTripCard(
     trip: TripResponse,
@@ -131,16 +154,41 @@ private fun PlannedTripCard(
     onUseCurrentTime: (String) -> Unit,
 ) {
     val isStale = isDepartureStale(trip.plannedDepartureAt)
+    val dateLabel = formatDepartureDate(trip.plannedDepartureAt)
+    val durationLabel = formatEstimatedDuration(trip.plannedDepartureAt, trip.calculatedArrivalAt)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
+        PlannedRouteMap(trip = trip)
+
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = "${trip.originName} \u2192 ${trip.destinationName}",
                 style = MaterialTheme.typography.titleMedium,
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (dateLabel != null) {
+                    TripDetail(icon = Icons.Filled.CalendarToday, text = dateLabel)
+                }
+                if (!isStale) {
+                    val arrival = trip.calculatedArrivalAt?.let { " \u2192 ${formatLocalTime(it)}" } ?: ""
+                    TripDetail(
+                        icon = Icons.Filled.Schedule,
+                        text = "${formatLocalTime(trip.plannedDepartureAt)}$arrival",
+                    )
+                }
+                if (durationLabel != null) {
+                    TripDetail(icon = null, text = "\u2248 $durationLabel")
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -182,27 +230,89 @@ private fun PlannedTripCard(
             } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.End,
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Schedule,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        text = "Sale ${formatLocalTime(trip.plannedDepartureAt)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
                     Button(onClick = { onStartTrip(trip.id) }) {
                         Text("Iniciar")
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TripDetail(icon: ImageVector?, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+// Static preview of the route Google suggested when the trip was created.
+// Lite mode renders a bitmap instead of a live map, which is what keeps
+// several maps in a scrolling list cheap. Without a stored route (the
+// route calculation failed) it still shows both ends of the trip.
+@Composable
+private fun PlannedRouteMap(trip: TripResponse) {
+    val context = LocalContext.current
+    val mapProperties = remember {
+        MapProperties(mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark))
+    }
+    val origin = LatLng(trip.originLat, trip.originLng)
+    val destination = LatLng(trip.destinationLat, trip.destinationLng)
+    val routePoints = remember(trip.plannedRoutePolyline) {
+        trip.plannedRoutePolyline
+            ?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { decodePolyline(it) }.getOrNull() }
+            .orEmpty()
+    }
+    val cameraPositionState = rememberCameraPositionState()
+
+    GoogleMap(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(150.dp),
+        cameraPositionState = cameraPositionState,
+        properties = mapProperties,
+        googleMapOptionsFactory = { GoogleMapOptions().liteMode(true) },
+        uiSettings = MapUiSettings(
+            zoomControlsEnabled = false,
+            mapToolbarEnabled = false,
+            scrollGesturesEnabled = false,
+            zoomGesturesEnabled = false,
+            rotationGesturesEnabled = false,
+            tiltGesturesEnabled = false,
+        ),
+        // A lite map opens the Google Maps app on tap unless the click is
+        // handled here.
+        onMapClick = {},
+        onMapLoaded = {
+            val bounds = LatLngBounds.Builder().apply {
+                include(origin)
+                include(destination)
+                routePoints.forEach { include(it) }
+            }.build()
+            cameraPositionState.move(CameraUpdateFactory.newLatLngBounds(bounds, 40))
+        },
+    ) {
+        if (routePoints.size > 1) {
+            Polyline(points = routePoints, color = MaterialTheme.colorScheme.primary, width = 10f)
+        }
+        Marker(state = rememberMarkerState(key = "${trip.id}-origin", position = origin))
+        Marker(state = rememberMarkerState(key = "${trip.id}-destination", position = destination))
     }
 }
 
@@ -233,5 +343,42 @@ private fun formatLocalTime(isoDateTime: String?): String {
             .format(DateTimeFormatter.ofPattern("HH:mm"))
     } catch (e: Exception) {
         "--:--"
+    }
+}
+
+private val SPANISH = Locale.forLanguageTag("es")
+
+// "Hoy, vie 6 nov", "Mañana, sáb 7 nov" or "lun 9 nov", in the phone's
+// time zone.
+private fun formatDepartureDate(isoDateTime: String?): String? {
+    if (isoDateTime == null) return null
+    return try {
+        val date = OffsetDateTime.parse(isoDateTime).atZoneSameInstant(ZoneId.systemDefault()).toLocalDate()
+        val today = LocalDate.now()
+        // Some Android versions abbreviate with a trailing dot ("vie.").
+        val formatted = date.format(DateTimeFormatter.ofPattern("EEE d MMM", SPANISH)).replace(".", "")
+        when (date) {
+            today -> "Hoy, $formatted"
+            today.plusDays(1) -> "Mañana, $formatted"
+            else -> formatted
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+// Duration of Google's estimate at creation time, "53 min" or "1 h 35 min".
+private fun formatEstimatedDuration(departureAt: String?, arrivalAt: String?): String? {
+    if (departureAt == null || arrivalAt == null) return null
+    return try {
+        val minutes = Duration.between(OffsetDateTime.parse(departureAt), OffsetDateTime.parse(arrivalAt)).toMinutes()
+        when {
+            minutes <= 0 -> null
+            minutes < 60 -> "$minutes min"
+            minutes % 60 == 0L -> "${minutes / 60} h"
+            else -> "${minutes / 60} h ${minutes % 60} min"
+        }
+    } catch (e: Exception) {
+        null
     }
 }
