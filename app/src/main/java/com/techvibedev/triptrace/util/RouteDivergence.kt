@@ -36,3 +36,15 @@ private fun approxDistanceMeters(a: LatLng, b: LatLng): Double {
     val dLng = (a.longitude - b.longitude) * metersPerDegree * cos(Math.toRadians(a.latitude))
     return sqrt(dLat * dLat + dLng * dLng)
 }
+
+// Where to insert `point` among the via points so the trip
+// origin -> via points -> destination grows the least, measured in straight
+// lines. Lets the user add points in any order and still get them visited in
+// the order they lie along the way.
+fun bestInsertionIndex(origin: LatLng, viaPoints: List<LatLng>, destination: LatLng, point: LatLng): Int {
+    val path = listOf(origin) + viaPoints + destination
+    return (0 until path.size - 1).minByOrNull { i ->
+        approxDistanceMeters(path[i], point) + approxDistanceMeters(point, path[i + 1]) -
+            approxDistanceMeters(path[i], path[i + 1])
+    } ?: viaPoints.size
+}

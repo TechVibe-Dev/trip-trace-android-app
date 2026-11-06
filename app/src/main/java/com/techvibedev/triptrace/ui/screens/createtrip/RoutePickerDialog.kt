@@ -70,6 +70,7 @@ import com.techvibedev.triptrace.data.model.ViaPointDto
 import com.techvibedev.triptrace.data.repository.RouteRepository
 import com.techvibedev.triptrace.location.GeocodingProvider
 import com.techvibedev.triptrace.util.decodePolyline
+import com.techvibedev.triptrace.util.bestInsertionIndex
 import com.techvibedev.triptrace.util.furthestPointFrom
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -265,7 +266,13 @@ fun RoutePickerDialog(
             return
         }
         val point = ViaPointDto(name = null, lat = latLng.latitude, lng = latLng.longitude)
-        customVia.add(point)
+        val insertAt = bestInsertionIndex(
+            originLatLng,
+            customVia.map { LatLng(it.lat, it.lng) },
+            destinationLatLng,
+            latLng,
+        )
+        customVia.add(insertAt, point)
         scope.launch {
             // Best-effort label for the list; the point works the same
             // without it.
