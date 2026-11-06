@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditLocation
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -59,6 +60,7 @@ import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
 import com.techvibedev.triptrace.data.model.StopCreateRequest
 import com.techvibedev.triptrace.data.model.TripCreateRequest
 import com.techvibedev.triptrace.data.repository.FavoritePlaceRepository
+import com.techvibedev.triptrace.data.repository.RouteRepository
 import com.techvibedev.triptrace.data.repository.TripRepository
 import com.techvibedev.triptrace.location.GeocodingProvider
 import com.techvibedev.triptrace.location.LocationProvider
@@ -118,6 +120,7 @@ private data class MapConfirmState(
 fun CreateTripScreen(
     tripRepository: TripRepository,
     favoritePlaceRepository: FavoritePlaceRepository,
+    routeRepository: RouteRepository,
     onTripSaved: () -> Unit,
     onTripStarted: (String) -> Unit,
 ) {
@@ -158,6 +161,16 @@ fun CreateTripScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var mapConfirmState by remember { mutableStateOf<MapConfirmState?>(null) }
     var isResolvingMapConfirm by remember { mutableStateOf(false) }
+    // Null = let Google choose (its fastest route). Cleared whenever origin
+    // or destination changes, since a route only makes sense between the
+    // two places it was picked for.
+    var routeChoice by remember { mutableStateOf<RouteChoice?>(null) }
+    // Origin and destination as resolved when the route picker opened; the
+    // picker is shown while this is set.
+    var routePickerEndpoints by remember {
+        mutableStateOf<Pair<Pair<Double, Double>, Pair<Double, Double>>?>(null)
+    }
+    var routePickerOriginName by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     // Center for the map-confirm dialog when geocoding fails outright and
@@ -286,6 +299,51 @@ fun CreateTripScreen(
         }
     }
 
+    // The picker needs real coordinates for both ends, so they're resolved
+    // here the same way save() does. Geocoded results are kept as the
+    // confirmed points, so the trip is saved between the same two places
+    // the route was picked for.
+    fun openRoutePicker() {
+        if (destination.isBlank()) {
+            errorMessage = "Ingresá un destino primero"
+            return
+        }
+        if (useCurrentLocation && (currentLat == null || currentLng == null)) {
+            errorMessage = "Esperando tu ubicación, intentá de nuevo en un momento"
+            return
+        }
+        if (!useCurrentLocation && originText.isBlank()) {
+            errorMessage = "Ingresá un origen primero"
+            return
+        }
+        scope.launch {
+            isResolvingMapConfirm = true
+            val originResolved = if (useCurrentLocation) {
+                currentLat!! to currentLng!!
+            } else {
+                originCoords ?: geocodingProvider.geocode(originText).getOrNull()?.also { originCoords = it }
+            }
+            val destinationResolved = destinationCoords
+                ?: geocodingProvider.geocode(destination).getOrNull()?.also { destinationCoords = it }
+            isResolvingMapConfirm = false
+            if (originResolved == null || destinationResolved == null) {
+                errorMessage = "No se encontró el origen o el destino — confirmalo en el mapa primero"
+                return@launch
+            }
+            // Names a saved route's start in Perfil; "Ubicación actual"
+            // alone wouldn't say where that was.
+            routePickerOriginName = if (useCurrentLocation) {
+                geocodingProvider
+                    .reverseGeocode(originResolved.first, originResolved.second)
+                    .getOrDefault("Ubicación actual")
+            } else {
+                originText
+            }
+            errorMessage = null
+            routePickerEndpoints = originResolved to destinationResolved
+        }
+    }
+
     fun save(startNow: Boolean) {
         // If the user typed a stop but never tapped "+" to add it, commit
         // it now instead of silently losing it — this turned out to be the
@@ -399,6 +457,9 @@ fun CreateTripScreen(
                 destinationLng = destinationCoordsResolved.second,
                 plannedDepartureAt = timeTextToIso(departureTime),
                 desiredArrivalAt = timeTextToIso(desiredArrivalTime),
+                viaPoints = routeChoice?.viaPoints,
+                routeName = routeChoice?.name,
+                savedRouteId = routeChoice?.savedRouteId,
             )
             val result = tripRepository.createTrip(request)
             result.fold(
@@ -470,17 +531,20 @@ fun CreateTripScreen(
             onOriginTextChange = {
                 originText = it
                 originCoords = null
+                routeChoice = null
             },
             favorites = favorites,
             onFavoriteSelected = { favorite ->
                 originText = favorite.name
                 originCoords = favorite.lat to favorite.lng
+                routeChoice = null
             },
             onConfirmOnMap = { openMapConfirmForOrigin() },
             hasConfirmedCoords = originCoords != null,
             enabled = !isSaving && !isResolvingMapConfirm,
             onChangeClick = {
                 useCurrentLocation = !useCurrentLocation
+                routeChoice = null
                 if (useCurrentLocation) {
                     requestCurrentLocation()
                 }
@@ -497,11 +561,13 @@ fun CreateTripScreen(
                 // The confirmed pin (if any) belonged to the previous
                 // text — it no longer applies once the text changes.
                 destinationCoords = null
+                routeChoice = null
             },
             favorites = favorites,
             onFavoriteSelected = { favorite ->
                 destination = favorite.name
                 destinationCoords = favorite.lat to favorite.lng
+                routeChoice = null
             },
             enabled = !isSaving,
             extraTrailingIcon = {
@@ -568,6 +634,15 @@ fun CreateTripScreen(
                 Icon(imageVector = Icons.Filled.Add, contentDescription = "Agregar parada")
             }
         }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        RouteField(
+            routeChoice = routeChoice,
+            onPickClick = { openRoutePicker() },
+            onClear = { routeChoice = null },
+            enabled = !isSaving && !isResolvingMapConfirm,
+        )
 
         Spacer(modifier = Modifier.height(10.dp))
 
@@ -657,6 +732,72 @@ fun CreateTripScreen(
             },
             onDismiss = { mapConfirmState = null },
         )
+    }
+
+    routePickerEndpoints?.let { (originResolved, destinationResolved) ->
+        RoutePickerDialog(
+            routeRepository = routeRepository,
+            originName = routePickerOriginName,
+            origin = originResolved,
+            destinationName = destination,
+            destination = destinationResolved,
+            plannedDepartureAt = timeTextToIso(departureTime),
+            initialChoice = routeChoice,
+            onConfirm = { choice ->
+                routeChoice = choice
+                routePickerEndpoints = null
+            },
+            onDismiss = { routePickerEndpoints = null },
+        )
+    }
+}
+
+// Which way to drive: Google's fastest by default, or a route picked in
+// RoutePickerDialog (a saved one, a Google alternative, or custom "pasar
+// por" points).
+@Composable
+private fun RouteField(
+    routeChoice: RouteChoice?,
+    onPickClick: () -> Unit,
+    onClear: () -> Unit,
+    enabled: Boolean,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+            .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Route,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = routeChoice?.name ?: "Ruta más rápida",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (routeChoice != null) {
+                val count = routeChoice.viaPoints.size
+                Text(
+                    text = if (count == 1) "Pasa por 1 punto" else "Pasa por $count puntos",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (routeChoice != null) {
+            IconButton(onClick = onClear, enabled = enabled) {
+                Icon(imageVector = Icons.Filled.Clear, contentDescription = "Volver a la ruta más rápida")
+            }
+        }
+        TextButton(onClick = onPickClick, enabled = enabled) {
+            Text("Elegir")
+        }
     }
 }
 
