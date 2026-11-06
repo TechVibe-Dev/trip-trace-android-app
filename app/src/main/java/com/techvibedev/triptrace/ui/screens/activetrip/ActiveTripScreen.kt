@@ -210,6 +210,9 @@ fun ActiveTripScreen(
     // Confirmation before the manual "Finalizar viaje" button actually ends
     // the trip, so a misclick doesn't close it out by accident.
     var showEndTripConfirmDialog by remember { mutableStateOf(false) }
+    // Confirmation before letting go of the route chosen for this trip,
+    // since there's no way back to it once the API drops its via points.
+    var showLeaveRouteDialog by remember { mutableStateOf(false) }
     // Prompts once, automatically, on getting within ARRIVAL_THRESHOLD_METERS
     // of the destination — not a hard auto-finish, since the trip genuinely
     // might continue past this point (a stop just short of the actual
@@ -535,6 +538,32 @@ fun ActiveTripScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+
+                // Only while the trip still follows a chosen route: once
+                // the user lets go of it, via_points comes back empty.
+                val routeName = currentTrip?.routeName
+                if (routeName != null && !currentTrip?.viaPoints.isNullOrEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(OverlayCardColor, RoundedCornerShape(10.dp))
+                            .padding(start = 14.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Ruta elegida",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(text = routeName, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        TextButton(onClick = { showLeaveRouteDialog = true }) {
+                            Text("Dejar de seguirla")
+                        }
+                    }
+                }
             }
 
             Column {
@@ -599,6 +628,40 @@ fun ActiveTripScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showEndTripConfirmDialog = false }) {
+                    Text("Cancelar")
+                }
+            },
+        )
+    }
+
+    if (showLeaveRouteDialog) {
+        AlertDialog(
+            onDismissRequest = { showLeaveRouteDialog = false },
+            title = { Text("Dejar la ruta elegida") },
+            text = { Text("Desde acá te vamos a guiar por la ruta más rápida. ¿Seguro?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLeaveRouteDialog = false
+                        scope.launch {
+                            tripRepository.leaveChosenRoute(tripId).fold(
+                                onSuccess = {
+                                    trip = it
+                                    // Ask for the new, fastest route right
+                                    // away instead of waiting for the next
+                                    // regular poll.
+                                    refreshRequests.trySend(Unit)
+                                },
+                                onFailure = { errorMessage = "No se pudo dejar la ruta elegida." },
+                            )
+                        }
+                    },
+                ) {
+                    Text("Dejarla")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLeaveRouteDialog = false }) {
                     Text("Cancelar")
                 }
             },

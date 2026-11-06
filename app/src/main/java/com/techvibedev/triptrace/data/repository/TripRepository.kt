@@ -92,6 +92,18 @@ class TripRepository(
         }
     }
 
+    // Stops following the route the user chose for this trip: from the next
+    // recalculate-eta on, the API asks Google for its fastest route again.
+    // The trip keeps its route_name, as a record of what was planned.
+    suspend fun leaveChosenRoute(tripId: String): Result<TripResponse> {
+        return try {
+            val request = TripUpdateRequest(viaPoints = emptyList())
+            Result.success(apiService.updateTrip(authHeader(), tripId, request))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     // Best-effort: asks the API to calculate the route/ETA (Google Routes,
     // traffic-aware) for a trip and persist calculated_arrival_at +
     // planned_route_polyline. Callers should treat failure here as
