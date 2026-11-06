@@ -13,15 +13,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,13 +33,13 @@ import androidx.compose.ui.unit.dp
 import com.techvibedev.triptrace.data.model.TripResponse
 import com.techvibedev.triptrace.data.repository.TripRepository
 import kotlinx.coroutines.launch
-import java.time.Duration
-import java.time.OffsetDateTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 @Composable
-fun TripsScreen(tripRepository: TripRepository, onStartTrip: (String) -> Unit) {
+fun TripsScreen(
+    tripRepository: TripRepository,
+    onOpenTrip: (String) -> Unit,
+    onStartTrip: (String) -> Unit,
+) {
     var trips by remember { mutableStateOf<List<TripResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -98,6 +95,7 @@ fun TripsScreen(tripRepository: TripRepository, onStartTrip: (String) -> Unit) {
                     items(trips) { trip ->
                         PlannedTripCard(
                             trip = trip,
+                            onOpenTrip = onOpenTrip,
                             onStartTrip = { tripId ->
                                 scope.launch {
                                     val result = tripRepository.startTrip(tripId)
@@ -127,111 +125,34 @@ fun TripsScreen(tripRepository: TripRepository, onStartTrip: (String) -> Unit) {
 @Composable
 private fun PlannedTripCard(
     trip: TripResponse,
+    onOpenTrip: (String) -> Unit,
     onStartTrip: (String) -> Unit,
     onUseCurrentTime: (String) -> Unit,
 ) {
-    val isStale = isDepartureStale(trip.plannedDepartureAt)
-
     Card(
+        onClick = { onOpenTrip(trip.id) },
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "${trip.originName} \u2192 ${trip.destinationName}",
-                style = MaterialTheme.typography.titleMedium,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "${trip.originName} \u2192 ${trip.destinationName}",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = Icons.Filled.Map,
+                    contentDescription = "Ver mapa",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
-
-            if (isStale) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(modifier = Modifier.size(6.dp))
-                    Text(
-                        text = "Hora planeada (${formatLocalTime(trip.plannedDepartureAt)}) ya pasó",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = { onUseCurrentTime(trip.id) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("Usar hora actual")
-                    }
-                    Button(
-                        onClick = { onStartTrip(trip.id) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("Iniciar")
-                    }
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Schedule,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        text = "Sale ${formatLocalTime(trip.plannedDepartureAt)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Button(onClick = { onStartTrip(trip.id) }) {
-                        Text("Iniciar")
-                    }
-                }
-            }
+            PlannedTripInfo(trip = trip)
+            Spacer(modifier = Modifier.height(8.dp))
+            PlannedTripActions(trip = trip, onStartTrip = onStartTrip, onUseCurrentTime = onUseCurrentTime)
         }
-    }
-}
-
-// Small buffer so a departure time set to "right now" (via "Usar hora
-// actual") doesn't immediately count as stale again on the very next
-// recomposition/reload, a few hundred milliseconds later, before the user
-// even gets a chance to tap "Iniciar".
-private val STALE_GRACE_PERIOD: Duration = Duration.ofSeconds(60)
-
-private fun isDepartureStale(plannedDepartureAt: String?): Boolean {
-    if (plannedDepartureAt == null) return false
-    return try {
-        OffsetDateTime.parse(plannedDepartureAt).isBefore(OffsetDateTime.now().minus(STALE_GRACE_PERIOD))
-    } catch (e: Exception) {
-        false
-    }
-}
-
-// The API returns timestamps in UTC — formatting an OffsetDateTime directly
-// prints ITS OWN offset's hour, not the phone's local one, so without
-// converting first this showed UTC time as if it were local (e.g. showing
-// "20:34" while the phone's actual local time was 17:34, in UTC-3).
-private fun formatLocalTime(isoDateTime: String?): String {
-    if (isoDateTime == null) return "--:--"
-    return try {
-        OffsetDateTime.parse(isoDateTime)
-            .atZoneSameInstant(ZoneId.systemDefault())
-            .format(DateTimeFormatter.ofPattern("HH:mm"))
-    } catch (e: Exception) {
-        "--:--"
     }
 }

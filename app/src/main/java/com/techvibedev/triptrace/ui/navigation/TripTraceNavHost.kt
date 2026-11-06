@@ -35,6 +35,7 @@ import com.techvibedev.triptrace.ui.screens.createtrip.CreateTripScreen
 import com.techvibedev.triptrace.ui.screens.history.HistoryScreen
 import com.techvibedev.triptrace.ui.screens.login.LoginScreen
 import com.techvibedev.triptrace.ui.screens.register.RegisterScreen
+import com.techvibedev.triptrace.ui.screens.trips.PlannedTripDetailScreen
 import com.techvibedev.triptrace.ui.screens.trips.TripsScreen
 import com.techvibedev.triptrace.ui.screens.user.UserScreen
 
@@ -154,8 +155,24 @@ private fun TripTraceNavContent(
         composable(Routes.TRIPS) {
             TripsScreen(
                 tripRepository = tripRepository,
+                onOpenTrip = { tripId ->
+                    navController.navigate("${Routes.PLANNED_TRIP}/$tripId")
+                },
                 onStartTrip = { tripId ->
                     navController.navigate("${Routes.ACTIVE_TRIP}/$tripId")
+                },
+            )
+        }
+        composable("${Routes.PLANNED_TRIP}/{tripId}") { backStackEntry ->
+            val tripId = backStackEntry.arguments?.getString("tripId") ?: ""
+            PlannedTripDetailScreen(
+                tripId = tripId,
+                tripRepository = tripRepository,
+                onBack = { navController.popBackStack() },
+                onStartTrip = { startedTripId ->
+                    navController.navigate("${Routes.ACTIVE_TRIP}/$startedTripId") {
+                        popUpTo(Routes.TRIPS)
+                    }
                 },
             )
         }
