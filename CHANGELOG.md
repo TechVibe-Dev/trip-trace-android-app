@@ -9,7 +9,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Trips: each planned trip shows a map with the suggested route, the departure date, the departure and estimated arrival times, and the estimated duration. ([#138](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/138))
+- Trips: each planned trip shows its departure date, departure and estimated arrival times, and estimated duration. Tapping a planned trip opens a new screen with the map of its suggested route, its details and the buttons to start it. ([#138](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/138))
 - History: each trip shows its departure and arrival time. The collapsed card shows them before the duration, with a "+1" when the trip arrives on a later day. The expanded card adds a row with Salida, Llegada and Duración, with the date next to each time when the trip spans more than one day. The date at the top of the card is now the departure date. ([#137](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/137))
 
 ### Fixed
