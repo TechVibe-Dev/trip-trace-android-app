@@ -105,7 +105,9 @@ private sealed class RouteOption {
 // known. Offers Google's fastest route, its alternatives, the user's saved
 // routes between these two places, and a custom route built by long-pressing
 // the map to add "pasar por" points. A custom route (or a Google
-// alternative) can be saved with a name for next time.
+// alternative) can be saved with a name for next time. The trip's stops are
+// sent with every preview and shown on the map, but never become part of a
+// route's own via points: the API adds them to the trip's route on its own.
 @Composable
 fun RoutePickerDialog(
     routeRepository: RouteRepository,
@@ -113,6 +115,7 @@ fun RoutePickerDialog(
     origin: Pair<Double, Double>,
     destinationName: String,
     destination: Pair<Double, Double>,
+    stops: List<ViaPointDto>,
     plannedDepartureAt: String?,
     initialChoice: RouteChoice?,
     onConfirm: (RouteChoice?) -> Unit,
@@ -150,6 +153,7 @@ fun RoutePickerDialog(
         destinationLat = destination.first,
         destinationLng = destination.second,
         viaPoints = viaPoints,
+        stops = stops,
         plannedDepartureAt = plannedDepartureAt,
         alternatives = alternatives,
     )
@@ -361,6 +365,15 @@ fun RoutePickerDialog(
                             state = rememberMarkerState(position = destinationLatLng),
                             icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE),
                         )
+                        stops.forEach { stop ->
+                            key("stop", stop.lat, stop.lng) {
+                                Marker(
+                                    state = rememberMarkerState(position = LatLng(stop.lat, stop.lng)),
+                                    title = stop.name,
+                                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_VIOLET),
+                                )
+                            }
+                        }
                         selectedViaPoints.forEach { via ->
                             key(via.lat, via.lng) {
                                 Marker(
