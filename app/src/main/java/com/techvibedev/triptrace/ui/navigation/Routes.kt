@@ -8,4 +8,5 @@ object Routes {
     const val USER = "user"
     const val CREATE_TRIP = "create_trip"
     const val ACTIVE_TRIP = "active_trip"
+    const val PLANNED_TRIP = "planned_trip"
 }

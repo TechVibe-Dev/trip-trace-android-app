@@ -7,6 +7,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 06 Nov 2026
+
+### Added
+
+- Custom routes per trip. Create trip has a new "Ruta" row: "Elegir" opens a full-screen map with Google's fastest route, its alternatives (up to 3), and the user's saved routes between the same two places, each with its duration and distance. Long-pressing the map adds a "pasar por" point (up to 10), placed in the list where it lengthens the trip the least so points can be added in any order, building a custom route that can be saved with a name. A picked Google alternative is kept by turning the spot where it differs most from the fastest route into a via point. During the trip, rerouting follows the chosen route; a "Ruta elegida" card shows its name with a "Dejar de seguirla" button to go back to the fastest route. Saved routes are listed in Perfil, where they can be deleted. Needs trip-trace-api [#82](https://github.com/TechVibe-Dev/trip-trace-api/pull/82). ([#126](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/126))
+- Trips: each planned trip shows its departure date, departure and estimated arrival times, and estimated duration. Tapping a planned trip opens a new screen with the map of its suggested route, its details and the buttons to start it. ([#138](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/138))
+- History: each trip shows its departure and arrival time. The collapsed card shows them before the duration, with a "+1" when the trip arrives on a later day. The expanded card adds a row with Salida, Llegada and Duración, with the date next to each time when the trip spans more than one day. The date at the top of the card is now the departure date. ([#137](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/137))
+- Create trip: the trip's date can now be picked, not just the departure time. A "Cuándo" card has Hoy, Mañana and Elegir fecha (a calendar that doesn't allow past days), large Salida and Quiero llegar blocks, and a one-line summary of when the trip leaves. Desired arrival falls on the departure day, or the next one when its time is earlier than departure. A trip on another day is saved with "Programar viaje", since it can't be started right away. ([#140](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/140))
+
+### Changed
+
+- Create trip redesign: origin, stops and destination are shown as an itinerary in one card, joined by a line, with borderless fields. "Usar mi ubicación" is a chip under the origin, and the route sits at the end of the card. The save buttons stay fixed at the bottom of the screen. ([#140](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/140))
+- Create trip: the route picker map now goes through the trip's stops. It shows them as markers, and each route's line, duration and distance include them, matching the route the trip will be saved with. Stops not confirmed on the map are geocoded when the picker opens. Google's alternative routes aren't offered while there are stops, since Google can't combine them. Needs trip-trace-api [#91](https://github.com/TechVibe-Dev/trip-trace-api/pull/91). ([#140](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/140))
+- Bumped the Compose BOM from 2024.11.00 to 2026.09.00. `maps-compose` already pulled 2026.09.00 in at runtime, so the app was compiled against older Compose libraries than the ones it ran with, and the date picker crashed when it opened. ([#140](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/140))
+
+### Fixed
+
+- History: a long trip title no longer squeezes the date into a vertical column or overlaps it. The title now wraps in the space left beside the date and arrow. ([#135](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/135))
+- Create trip: the "Agregar parada" field no longer takes focus and opens the keyboard when the screen opens. No field is focused until the user taps one. ([#135](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/135))
+- Create trip: picking a favorite in Destino, Origen or Agregar parada now selects it in one tap, instead of the list reopening with the same favorite and asking for a second tap. ([#135](https://github.com/TechVibe-Dev/trip-trace-android-app/pull/135))
+
 ## [0.7.0] - 04 Nov 2026
 
 ### Changed

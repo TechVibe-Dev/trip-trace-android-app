@@ -17,17 +17,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
+import kotlinx.coroutines.flow.drop
 
 // A text field that offers the user's saved favorites (android#81) two
 // ways: typing something that matches a favorite's name opens the list of
@@ -49,6 +55,9 @@ import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
 // extraTrailingIcon is a slot for a caller-specific action placed before
 // the heart (Create trip uses it for "confirm on map") — kept generic here
 // so this component doesn't need to know about map-confirm at all.
+//
+// underlined swaps the outlined box for a borderless field with only a
+// bottom line, for fields that already sit inside a card.
 @Composable
 fun FavoriteAwareTextField(
     label: String,
@@ -59,6 +68,7 @@ fun FavoriteAwareTextField(
     enabled: Boolean,
     modifier: Modifier = Modifier,
     extraTrailingIcon: (@Composable () -> Unit)? = null,
+    underlined: Boolean = false,
 ) {
     val focusRequester = remember { FocusRequester() }
 
@@ -79,9 +89,17 @@ fun FavoriteAwareTextField(
     // produces a match, closes the moment it stops matching (cleared the
     // field, or kept typing past it). Skipped while the heart's full list
     // is showing, so typing during that doesn't fight it closed.
+    // Text set by picking a favorite. While the field still holds exactly
+    // that text the typeahead stays closed, so a pick doesn't reopen the
+    // list with the same favorite and ask for a second tap.
+    var selectedText by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(value, favorites) {
+        if (selectedText != null && value != selectedText) {
+            selectedText = null
+        }
         if (!showAllFavorites) {
-            menuOpen = typeaheadMatches.isNotEmpty()
+            menuOpen = selectedText == null && typeaheadMatches.isNotEmpty()
         }
     }
 
@@ -90,11 +108,17 @@ fun FavoriteAwareTextField(
     // browsed/picked from, not typed into, so it's fine (arguably correct)
     // if that path lets the keyboard drop. requestFocus() on an
     // already-focused field is a harmless no-op, so this doesn't need to
-    // check whether focus actually needs reclaiming first.
-    LaunchedEffect(menuOpen) {
-        if (!showAllFavorites) {
-            focusRequester.requestFocus()
-        }
+    // check whether focus actually needs reclaiming first. The initial value
+    // is skipped: otherwise every instance grabs focus on first composition
+    // and the last field on screen ends up focused with the keyboard open.
+    LaunchedEffect(Unit) {
+        snapshotFlow { menuOpen }
+            .drop(1)
+            .collect {
+                if (!showAllFavorites) {
+                    focusRequester.requestFocus()
+                }
+            }
     }
 
     fun dismissMenu() {
@@ -103,6 +127,7 @@ fun FavoriteAwareTextField(
     }
 
     fun selectFavorite(favorite: FavoritePlaceResponse) {
+        selectedText = favorite.name
         onFavoriteSelected(favorite)
         dismissMenu()
     }
@@ -113,42 +138,62 @@ fun FavoriteAwareTextField(
     // direct child in the Row, which is this Column, not a grandchild two
     // levels down. Weight silently does nothing useful applied that deep.
     Column(modifier = modifier) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            label = { Text(label) },
-            singleLine = true,
-            enabled = enabled,
-            trailingIcon = {
-                Row {
-                    extraTrailingIcon?.invoke()
-                    IconButton(
-                        onClick = {
-                            if (menuOpen && showAllFavorites) {
-                                dismissMenu()
-                            } else {
-                                showAllFavorites = true
-                                menuOpen = true
-                            }
+        val trailingIcon: @Composable () -> Unit = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                extraTrailingIcon?.invoke()
+                IconButton(
+                    onClick = {
+                        if (menuOpen && showAllFavorites) {
+                            dismissMenu()
+                        } else {
+                            showAllFavorites = true
+                            menuOpen = true
+                        }
+                    },
+                    enabled = enabled,
+                ) {
+                    Icon(
+                        imageVector = if (favorites.isEmpty()) {
+                            Icons.Filled.FavoriteBorder
+                        } else {
+                            Icons.Filled.Favorite
                         },
-                        enabled = enabled,
-                    ) {
-                        Icon(
-                            imageVector = if (favorites.isEmpty()) {
-                                Icons.Filled.FavoriteBorder
-                            } else {
-                                Icons.Filled.Favorite
-                            },
-                            contentDescription = "Elegir favorito",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                        contentDescription = "Elegir favorito",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focusRequester),
-        )
+            }
+        }
+        val fieldModifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester)
+        if (underlined) {
+            TextField(
+                value = value,
+                onValueChange = onValueChange,
+                label = { Text(label) },
+                singleLine = true,
+                enabled = enabled,
+                trailingIcon = trailingIcon,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    unfocusedIndicatorColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                ),
+                modifier = fieldModifier,
+            )
+        } else {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                label = { Text(label) },
+                singleLine = true,
+                enabled = enabled,
+                trailingIcon = trailingIcon,
+                modifier = fieldModifier,
+            )
+        }
         if (menuOpen && menuItems.isNotEmpty()) {
             Surface(
                 tonalElevation = 3.dp,

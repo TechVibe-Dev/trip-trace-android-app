@@ -55,8 +55,8 @@ android {
         // just goes up by 1 each release rather than encoding the version
         // number itself. versionName is the human-readable one shown in
         // Settings > Apps.
-        versionCode = 5
-        versionName = "0.7.0"
+        versionCode = 6
+        versionName = "0.8.0"
 
         manifestPlaceholders["mapsApiKey"] = mapsApiKey
     }
