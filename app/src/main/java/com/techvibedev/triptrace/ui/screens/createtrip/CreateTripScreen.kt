@@ -86,6 +86,7 @@ import androidx.core.content.ContextCompat
 import com.techvibedev.triptrace.data.model.FavoritePlaceResponse
 import com.techvibedev.triptrace.data.model.StopCreateRequest
 import com.techvibedev.triptrace.data.model.TripCreateRequest
+import com.techvibedev.triptrace.data.model.ViaPointDto
 import com.techvibedev.triptrace.data.repository.FavoritePlaceRepository
 import com.techvibedev.triptrace.data.repository.RouteRepository
 import com.techvibedev.triptrace.data.repository.TripRepository
@@ -204,6 +205,9 @@ fun CreateTripScreen(
         mutableStateOf<Pair<Pair<Double, Double>, Pair<Double, Double>>?>(null)
     }
     var routePickerOriginName by remember { mutableStateOf("") }
+    // The stops as resolved when the picker opened, so its previews go
+    // through them like the saved trip's route will.
+    var routePickerStops by remember { mutableStateOf<List<ViaPointDto>>(emptyList()) }
     val scope = rememberCoroutineScope()
 
     // Center for the map-confirm dialog when geocoding fails outright and
@@ -373,6 +377,27 @@ fun CreateTripScreen(
                 originText
             }
             errorMessage = null
+            // Stops not confirmed on the map yet are geocoded here and kept
+            // as confirmed, the same as origin and destination above.
+            isResolvingMapConfirm = true
+            val resolvedStops = mutableListOf<ViaPointDto>()
+            for ((index, stop) in stops.withIndex()) {
+                val coords = if (stop.confirmedLat != null && stop.confirmedLng != null) {
+                    stop.confirmedLat to stop.confirmedLng
+                } else {
+                    geocodingProvider.geocode(stop.name).getOrNull()?.also { (lat, lng) ->
+                        stops[index] = stop.copy(confirmedLat = lat, confirmedLng = lng)
+                    }
+                }
+                if (coords == null) {
+                    isResolvingMapConfirm = false
+                    errorMessage = "No se encontró la parada \"${stop.name}\" — confirmala en el mapa primero"
+                    return@launch
+                }
+                resolvedStops.add(ViaPointDto(name = stop.name, lat = coords.first, lng = coords.second))
+            }
+            isResolvingMapConfirm = false
+            routePickerStops = resolvedStops
             routePickerEndpoints = originResolved to destinationResolved
         }
     }
@@ -832,6 +857,7 @@ fun CreateTripScreen(
         RoutePickerDialog(
             routeRepository = routeRepository,
             originName = routePickerOriginName,
+            stops = routePickerStops,
             origin = originResolved,
             destinationName = destination,
             destination = destinationResolved,

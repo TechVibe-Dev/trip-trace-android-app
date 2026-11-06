@@ -40,6 +40,8 @@ data class RoutePreviewRequest(
     @SerializedName("destination_lat") val destinationLat: Double,
     @SerializedName("destination_lng") val destinationLng: Double,
     @SerializedName("via_points") val viaPoints: List<ViaPointDto> = emptyList(),
+    // The trip's planned stops, in order. The API merges them into the route.
+    val stops: List<ViaPointDto> = emptyList(),
     @SerializedName("planned_departure_at") val plannedDepartureAt: String? = null,
     val alternatives: Boolean = false,
 )
